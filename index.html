@@ -13,12 +13,17 @@
     <header class="topbar">
       <div class="brand"><span class="dot"></span> GNSS Scope <small>M10S / NMEA</small></div>
       <div class="controls">
+        <select id="transport" aria-label="接続方式">
+          <option value="ws">WebSocket（iPhone）</option>
+          <option value="ble">Bluetooth（Android）</option>
+        </select>
         <input id="ws-url" type="text" value="ws://picow.local/" spellcheck="false" aria-label="WebSocket URL" />
         <button id="btn-connect">接続</button>
         <button id="btn-record" class="ghost">収録開始</button>
         <button id="btn-demo" class="ghost">デモ再生</button>
         <span class="conn"><span id="conn-status" data-state="disconnected">disconnected</span></span>
         <span id="rec-state" class="rec-state">—</span>
+        <span id="transport-hint" class="rec-state"></span>
       </div>
     </header>
 

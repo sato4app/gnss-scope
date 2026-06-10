@@ -17,12 +17,19 @@ gnss-monitor/
     recorder.js      生フレームをIndexedDBに収録（再生用）
     app.js           配線：WS→行バッファ→収録→パース→集約→3ビュー
     views/
-      fix-status.js  測位品質・DOP・座標・有効測位率
-      sky-plot.js    極座標の衛星配置（使用/可視、SNRで大きさ）
-      snr-chart.js   衛星ごとのC/N0棒グラフ
+      fix-status.js   測位品質・DOP・座標・有効測位率
+      sky-plot.js     極座標の衛星配置（使用/可視、SNRで大きさ）
+      snr-chart.js    衛星ごとのC/N0棒グラフ
+      timeseries.js   時系列グラフ（使用衛星数/HDOP/平均SNR・uPlot）FR-7
+      data-quality.js データ品質（通過率・更新レート・間隔ジッタ・欠損率）FR-10
     dev/
-      mock-feeder.js 開発用デモ生成器（Picoなしで動作確認）
+      mock-feeder.js  開発用デモ生成器（Picoなしで動作確認）
 ```
+
+時系列グラフ（FR-7）は uPlot を CDN から読み込みます（`index.html` の `<head>`）。
+データ品質（FR-10）はチェックサム通過率・センテンス種別ごとの更新レート・
+エポック間隔のジッタ（ヒストグラム）・GGA 欠損率を集計します。いずれも既存の
+`EpochAssembler.onEpoch` が渡す Epoch をそのまま入力にしています。
 
 データの流れ：`WS受信 → 行バッファ → 収録 → パース＋検証 → エポック確定 → 3ビュー更新`。
 

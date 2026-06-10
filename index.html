@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GNSS Scope — M10S</title>
+    <!-- 時系列グラフ用 uPlot（CDN）。app.js より前に読み込み window.uPlot を提供 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="dot"></span> GNSS Scope <small>M10S / NMEA</small></div>
+      <div class="controls">
+        <input id="ws-url" type="text" value="ws://picow.local/" spellcheck="false" aria-label="WebSocket URL" />
+        <button id="btn-connect">接続</button>
+        <button id="btn-record" class="ghost">収録開始</button>
+        <button id="btn-demo" class="ghost">デモ再生</button>
+        <span class="conn"><span id="conn-status" data-state="disconnected">disconnected</span></span>
+        <span id="rec-state" class="rec-state">—</span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel" id="panel-fix">
+        <h2>測位ステータス</h2>
+        <div id="fix-status"></div>
+      </section>
+
+      <section class="panel" id="panel-sky">
+        <h2>スカイプロット</h2>
+        <canvas id="sky-plot"></canvas>
+        <ul class="legend">
+          <li data-c="gps">GPS</li>
+          <li data-c="glonass">GLONASS</li>
+          <li data-c="galileo">Galileo</li>
+          <li data-c="beidou">BeiDou</li>
+          <li data-c="qzss">QZSS</li>
+        </ul>
+        <p class="hint">● 使用中　○ 可視のみ　／　円の大きさ＝SNR</p>
+      </section>
+
+      <section class="panel" id="panel-snr">
+        <h2>SNR（C/N0, dBHz）</h2>
+        <canvas id="snr-chart"></canvas>
+      </section>
+
+      <section class="panel" id="panel-ts">
+        <h2>時系列（使用衛星数 / HDOP / 平均SNR）</h2>
+        <div id="timeseries"></div>
+        <p class="hint">直近 300 秒のスクロール窓。左軸＝SNR[dBHz]、右軸＝使用衛星数、破線＝HDOP。</p>
+      </section>
+
+      <section class="panel" id="panel-dq">
+        <h2>データ品質</h2>
+        <div id="data-quality"></div>
+      </section>
+    </main>
+
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

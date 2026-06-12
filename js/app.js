@@ -156,3 +156,9 @@ function stopDemo() {
 
 recorder.init();
 setStatus('disconnected');
+
+// PWA：Service Worker を登録（オフライン起動用）。
+// 失敗してもアプリ本体の動作には影響させない（http配信や旧ブラウザでは単に登録されない）。
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+}

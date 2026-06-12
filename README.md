@@ -8,6 +8,10 @@ PicoW + MAX-M10S が WebSocket で流す生 NMEA を受け、Fix 状態・スカ
 ```
 gnss-monitor/
   index.html
+  manifest.webmanifest  PWAマニフェスト（ホーム画面追加用）
+  service-worker.js     オフラインキャッシュ（stale-while-revalidate）
+  icons/                PWAアイコン
+  vendor/uplot/         uPlot（ローカル同梱。オフラインでも時系列が動く）
   css/style.css
   js/
     nmea.js          NMEAパーサ（GGA/RMC/GSA/GSV）＋チェックサム
@@ -27,7 +31,8 @@ gnss-monitor/
       mock-feeder.js  開発用デモ生成器（Picoなしで動作確認）
 ```
 
-時系列グラフ（FR-7）は uPlot を CDN から読み込みます（`index.html` の `<head>`）。
+時系列グラフ（FR-7）は uPlot を `vendor/uplot/` から読み込みます（`index.html` の `<head>`。
+オフライン起動できるよう CDN ではなくローカル同梱）。
 データ品質（FR-10）はチェックサム通過率・センテンス種別ごとの更新レート・
 エポック間隔のジッタ（ヒストグラム）・GGA 欠損率を集計します。いずれも既存の
 `EpochAssembler.onEpoch` が渡す Epoch をそのまま入力にしています。
@@ -45,6 +50,17 @@ python3 -m http.server 8000
 ```
 
 「デモ再生」を押すと Pico なしでも動作確認できます（箕面付近の座標で合成 NMEA を 1Hz 生成）。
+
+## PWA（オフライン起動）
+
+HTTPS（GitHub Pages 等）または `http://localhost` で一度開くと、Service Worker が
+アプリ一式（uPlot 含む）をキャッシュします。以後は **配信サーバや電波の圏外でも起動可能**で、
+Android は Chrome のメニューから「ホーム画面に追加」するとアプリとして全画面起動できます。
+BLE 接続なら Pico と端末だけで完結するため、屋外でも PC は不要です。
+
+- 更新の反映：オンラインで開くと裏で最新版を取り直し、**次回の表示**から反映されます
+  （stale-while-revalidate）。
+- キャッシュを確実に作り直したいときは `service-worker.js` の `CACHE_NAME` の版数を上げてください。
 
 ## Pico に繋ぐ（WebSocket / Bluetooth の選択式）
 

@@ -1,0 +1,17 @@
+{
+  "name": "GNSS Scope — M10S",
+  "short_name": "GNSS Scope",
+  "description": "PicoW + MAX-M10S の生NMEAを受けて測位状態・スカイプロット・SNR・時系列・データ品質をリアルタイム表示するGNSSモニタ",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0c0f16",
+  "theme_color": "#0c0f16",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

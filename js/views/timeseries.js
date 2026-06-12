@@ -1,6 +1,6 @@
 // 時系列グラフ（FR-7）：エポックを直近 N 秒のリングバッファに蓄積し、
 // 使用衛星数・HDOP・平均SNR を時間軸で表示する。
-// 描画は uPlot（CDN, グローバル window.uPlot）。1Hz・長時間でも軽い再描画を狙う（NFR-3）。
+// 描画は uPlot（vendor/uplot にローカル同梱, グローバル window.uPlot）。1Hz・長時間でも軽い再描画を狙う（NFR-3）。
 //
 // 既存土台（js/epoch.js の Epoch）はそのまま入力に使う。再実装しない。
 
@@ -42,7 +42,7 @@ export class TimeSeriesView {
   _initPlot() {
     if (typeof window.uPlot === 'undefined') {
       // uPlot 未読込時は静かにフォールバック（後続の update でも描画しない）
-      this.el.innerHTML = '<p class="hint">uPlot を読み込めませんでした（オフライン時はキャッシュ要確認）。</p>';
+      this.el.innerHTML = '<p class="hint">uPlot を読み込めませんでした（vendor/uplot の配信を確認）。</p>';
       return;
     }
     const { width, height } = this._size();

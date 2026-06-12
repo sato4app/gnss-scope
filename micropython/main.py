@@ -1,61 +1,42 @@
-# main.py  (step2: 生NMEA を WebSocket と Bluetooth(BLE) の両方で配信 / Pico W "ダムパイプ")
+# main.py  (step3: 生NMEA を Bluetooth(BLE) のみで配信 / Pico W "ダムパイプ")
 # =============================================================================
 # 設計方針:
 #   - Picoは生のNMEA文を一切パースせず、そのまま全種類を流すだけ。
 #     （$GNRMC, $GNGGA, $GNGSV ... 何が欲しくなってもファームは変更不要）
-#   - パース・判定・地図表示はすべて受信側(PC/スマホブラウザ)で行う。
-#   - 接続方式は受信側で選択する：
-#       * iPhone  → WebSocket（ws://picow.local/）          ※iOSはWeb Bluetooth非対応
-#       * Android → Bluetooth(BLE, Nordic UART Service)      ※Web Bluetoothで接続
-#     どちらも同じ生NMEAが流れるので、受信側の後段処理は共通。
-#   - 屋外無人運用向けに堅牢化: WiFi自動再接続 / ソケット再待受 /
-#     ウォッチドッグ / gc.collect。
+#   - パース・判定・表示はすべて受信側(スマホブラウザ)で行う。
+#   - 配信は Bluetooth(BLE, Nordic UART Service) のみ。WiFi/WebSocket は廃止した。
+#     受信側は Web Bluetooth 対応端末（Android の Chrome/Edge 等）が必須。
+#     （iPhone/iPad は Web Bluetooth 非対応のため対象外）
+#   - ネットワーク不要：ルーター・PCが無い屋外でも Pico と Android だけで完結する。
+#     config.py（WiFi の SSID/パスワード）も不要になった。
+#   - 屋外無人運用向けに堅牢化: ウォッチドッグ / gc.collect / BLE自動再広告。
 #   - GNSS の UART は起動時にボーレートを自動同期する：
 #     まず 38400 で有効な NMEA が来るか確認 → 来なければ工場出荷時の 9600 で
 #     開いて UBX-CFG-VALSET で 38400 へ切替 → 38400 で再確認。
 #     （9600 ではマルチGNSSのフル出力(特にGSV)が帯域に収まらず間引かれるため）
-#   - BLE は WiFi に依存しない。WiFi 未接続でも BLE は常時広告し続けるので、
-#     Android はネットワーク無しでも接続できる（iPhone の WS だけ不可）。
-#
-# 接続先(SSID/パス)は config.py の WIFI_NETWORKS（上から優先）。
 # =============================================================================
 
-import network
-import machine
 import time
-import socket
-import select
 import gc
-import hashlib
-import binascii
 from machine import UART, Pin, WDT
 
-# BLE 非対応ファームでも WS だけは動くよう、import を保護する。
+# BLE専用構成のため bluetooth モジュールは必須。
+# 非対応ファームの場合は main() 冒頭でLED点滅して知らせ続ける。
 try:
     import bluetooth
     _BLE_OK = True
 except ImportError:
     _BLE_OK = False
-    print("！ bluetooth モジュール無し（BLE非対応ファーム）。WSのみで稼働")
-
-try:
-    from config import WIFI_NETWORKS
-except ImportError:
-    WIFI_NETWORKS = []
-    print("！ config.py が無い／WIFI_NETWORKS 未定義（BLEのみで稼働）")
 
 # ── 設定（ハードウェアに合わせた固定値。基本変更不要） ──────────────────
-HOSTNAME   = "picow"        # mDNS: picow.local / BLE広告名にも使用
-WS_PORT    = 80             # ws://picow.local/ （80なのでポート指定不要）
+BLE_NAME   = "picow"        # BLE広告名（受信側 js/ble-client.js の namePrefix と一致）
 UART_ID    = 0
 UART_TX    = 0              # GP0 → M10S RX
 UART_RX    = 1              # GP1 ← M10S TX
 UART_BAUD         = 38400   # 目標ボーレート（起動時に M10S へ切替を指示する）
 UART_BAUD_DEFAULT = 9600    # M10S の工場出荷時ボーレート（電源投入直後はこれ）
-UART_RXBUF        = 4096    # 受信バッファ。WS/BLE 送信のブロック中に溢れないよう拡大
+UART_RXBUF        = 4096    # 受信バッファ。BLE 送信のブロック中に溢れないよう拡大
 WDT_TIMEOUT_MS = 8000       # RP2040 の上限付近
-SEND_TIMEOUT   = 1.0        # 1フレーム送信の上限秒。超えたらそのクライアントを切断
-WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 led = Pin("LED", Pin.OUT)
 
@@ -75,8 +56,7 @@ _IRQ_CENTRAL_CONNECT    = 1
 _IRQ_CENTRAL_DISCONNECT = 2
 _IRQ_MTU_EXCHANGED      = 21
 
-# NUS の UUID 文字列（bluetooth.UUID 化は BlePeripheral.__init__ 内で行う。
-# BLE 非対応ファームでも本モジュールが読み込めるよう、ここでは文字列のみ持つ）
+# NUS の UUID 文字列（bluetooth.UUID 化は BlePeripheral.__init__ 内で行う）
 _NUS_UUID_STR = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 _NUS_TX_STR   = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"  # 周辺→中央（notify）
 _NUS_RX_STR   = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"  # 中央→周辺（write, 未使用）
@@ -168,134 +148,6 @@ class BlePeripheral:
         return len(self._conns)
 
 
-# ── WiFi接続（WDTがあれば待ち時間中も feed して誤リセットを防ぐ） ────────
-def connect_wifi(wlan, networks, wdt=None):
-    for ssid, pw in networks:
-        try:
-            wlan.disconnect()
-        except Exception:
-            pass
-        print("WiFi接続を試行:", ssid)
-        wlan.connect(ssid, pw)
-        for _ in range(40):                  # 最大 ~20秒
-            if wlan.isconnected():
-                print("  ✓ 接続:", ssid, wlan.ifconfig()[0])
-                return True
-            if wdt:
-                wdt.feed()
-            led.on();  time.sleep_ms(250)
-            led.off(); time.sleep_ms(250)
-    return False
-
-
-# ── WebSocket ハンドシェイク応答キー ────────────────────────────────────
-def ws_accept_key(client_key):
-    h = hashlib.sha1(client_key.encode() + WS_GUID)
-    return binascii.b2a_base64(h.digest()).strip().decode()
-
-
-# ── サーバ→クライアントの textフレーム（マスクなし） ─────────────────────
-def ws_frame(payload):
-    n = len(payload)
-    if n < 126:
-        head = bytes([0x81, n])
-    elif n < 65536:
-        head = bytes([0x81, 126, (n >> 8) & 0xff, n & 0xff])
-    else:
-        head = bytes([0x81, 127]) + n.to_bytes(8, "big")
-    return head + payload
-
-
-# ── データを「全部送り切る」。送り切れなければ例外 → 呼び出し側で切断 ───
-# （ノンブロッキングsendの途中切れによるWSフレーム破損を防ぐのが目的）
-def send_all(cl, data):
-    mv = memoryview(data)
-    total = len(data)
-    sent = 0
-    while sent < total:
-        n = cl.send(mv[sent:])
-        if not n:
-            raise OSError("send 0")
-        sent += n
-
-
-# ── 受信したHTTPリクエストを処理。WS upgradeなら101、違えば状態ページ ───
-def handle_new_connection(server, clients, poller, status):
-    try:
-        cl, remote = server.accept()
-    except Exception:
-        return
-    try:
-        cl.settimeout(3.0)
-        req = cl.recv(1024)
-        if not req:
-            cl.close(); return
-        text = req.decode("utf-8", "ignore")
-
-        # Sec-WebSocket-Key を探す
-        key = None
-        for line in text.split("\r\n"):
-            l = line.lower()
-            if l.startswith("sec-websocket-key:"):
-                key = line.split(":", 1)[1].strip()
-                break
-
-        if key and "upgrade" in text.lower():
-            accept = ws_accept_key(key)
-            resp = ("HTTP/1.1 101 Switching Protocols\r\n"
-                    "Upgrade: websocket\r\n"
-                    "Connection: Upgrade\r\n"
-                    "Sec-WebSocket-Accept: " + accept + "\r\n\r\n")
-            cl.settimeout(SEND_TIMEOUT)     # 送信は短時間で諦める（詰まり対策）
-            send_all(cl, resp.encode())
-            poller.register(cl, select.POLLIN)
-            clients.append(cl)
-            print("  WS接続:", remote[0], " (現在", len(clients), "台)")
-        else:
-            # 通常のGET → 動作確認用の簡単な状態ページ
-            html = (
-                "HTTP/1.0 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n"
-                "Connection: close\r\n\r\n"
-                "<!DOCTYPE html><meta charset=utf-8>"
-                "<body style='font-family:sans-serif;text-align:center;padding-top:40px'>"
-                "<h2>Pico W NMEA bridge</h2>"
-                "<p>WebSocket: ws://picow.local/</p>"
-                "<p>Bluetooth(BLE): " + HOSTNAME + " （Androidで接続）</p>"
-                "<p>接続中WSクライアント: " + str(len(clients)) + " 台</p>"
-                "<p>" + status + "</p></body>")
-            cl.send(html.encode())
-            cl.close()
-    except Exception as e:
-        print("  接続処理エラー:", e)
-        try:
-            cl.close()
-        except Exception:
-            pass
-
-
-def drop_client(cl, clients, poller):
-    try:
-        poller.unregister(cl)
-    except Exception:
-        pass
-    try:
-        cl.close()
-    except Exception:
-        pass
-    if cl in clients:
-        clients.remove(cl)
-
-
-def build_server(poller):
-    addr = socket.getaddrinfo("0.0.0.0", WS_PORT)[0][-1]
-    s = socket.socket()
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(addr)
-    s.listen(2)
-    poller.register(s, select.POLLIN)
-    return s
-
-
 # ── GNSS UART のボーレート自動同期 ────────────────────────────────────────
 # M10S は設定保存用フラッシュを持たず、電源投入のたびに 9600 で起動する。
 # 一方ソフトリセット直後などは 38400 のまま動いていることもあるため、
@@ -381,123 +233,55 @@ def init_gnss_uart():
 
 # ============================ メイン ============================
 def main():
+    # BLE専用構成：bluetooth モジュールが無いファームでは動作できない。
+    # LEDをゆっくり点滅させて知らせ続ける（WDT未起動なのでリセットはかからない）。
+    if not _BLE_OK:
+        print("✗ bluetooth モジュール無し（BLE非対応ファーム）。動作できません")
+        while True:
+            blink(1, on_ms=500, off_ms=500)
+
     # UART（GNSS）。ボーレートは自動同期（38400 へ引き上げ、失敗時 9600）
     uart = init_gnss_uart()
 
-    # Bluetooth(BLE) は WiFi に依存しないので先に起動し、常時広告する。
-    # （Android はネットワーク無しでも、この時点からすぐ接続できる）
-    ble = None
-    if _BLE_OK:
-        try:
-            ble = BlePeripheral(name=HOSTNAME)
-            print("✓ Bluetooth: BLE(NUS) 広告開始  name=%s" % HOSTNAME)
-        except Exception as e:
-            print("✗ Bluetooth 初期化失敗（WSのみで継続）:", e)
-
-    # WiFi（iPhone 用 WebSocket）。失敗しても BLE で動き続ける。
-    wlan = network.WLAN(network.STA_IF)
+    # Bluetooth(BLE)。起動に失敗したら知らせ続ける（配信手段が他に無いため）
     try:
-        network.hostname(HOSTNAME)        # mDNS用に接続前設定
-    except Exception:
-        pass
-    wlan.active(True)
+        ble = BlePeripheral(name=BLE_NAME)
+    except Exception as e:
+        print("✗ Bluetooth 初期化失敗:", e)
+        while True:
+            blink(2, on_ms=150, off_ms=150)
+            time.sleep_ms(700)
 
-    wifi_ok = bool(WIFI_NETWORKS) and connect_wifi(wlan, WIFI_NETWORKS)
     print("=" * 48)
-    if wifi_ok:
-        ip = wlan.ifconfig()[0]
-        print("✓ WiFi:", wlan.config("ssid"), ip)
-        print("  WebSocket : ws://picow.local/   (または ws://%s/)" % ip)
-    else:
-        print("✗ WiFi未接続。BLEのみで稼働（iPhoneのWSは不可）。後で自動再試行。")
-    print("  Bluetooth : %s （Android で接続）" % HOSTNAME)
+    print("✓ Bluetooth: BLE(NUS) 広告開始  name=%s" % BLE_NAME)
+    print("  Android の Chrome/Edge から接続してください")
     print("=" * 48)
     led.on()
 
-    # 初回接続が済んでからWDT起動（初回接続の待ち時間で誤リセットしない）
+    # 初期化が済んでからWDT起動（UART自動同期の待ち時間で誤リセットしない）
     wdt = WDT(timeout=WDT_TIMEOUT_MS)
 
-    poller = select.poll()
-    server = build_server(poller) if wifi_ok else None
-    clients = []
-
     buf = b""
-    last_wifi_check = time.ticks_ms()
     last_gc = time.ticks_ms()
 
     while True:
         wdt.feed()
 
-        # 1) WS ソケットのイベント処理（サーバがある時だけ）
-        if server is not None:
-            try:
-                events = poller.poll(0)
-            except Exception:
-                events = []
-            for obj, ev in events:
-                if obj is server:
-                    handle_new_connection(server, clients, poller,
-                                          "fix判定は受信側で")
-                else:
-                    # クライアントから何か来た or 切断/エラー
-                    if ev & (select.POLLHUP | select.POLLERR):
-                        drop_client(obj, clients, poller)
-                        continue
-                    try:
-                        d = obj.recv(64)
-                        if not d:                         # TCP切断
-                            drop_client(obj, clients, poller)
-                        elif d[0] & 0x0f == 0x8:           # WS closeフレーム
-                            drop_client(obj, clients, poller)
-                        # それ以外(ping等)は無視
-                    except Exception:
-                        drop_client(obj, clients, poller)
-
-        # 2) GNSSのNMEAを読み、行単位で WS と BLE の両方へ配信（無加工）
+        # GNSSのNMEAを読み、行単位で BLE へ配信（無加工）
         try:
             if uart.any():
                 buf += uart.read()
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 line = line.strip()                   # \r や空白を除去
-                if not line:
-                    continue
-                if clients:                           # WebSocket（iPhone）へ
-                    frame = ws_frame(line)
-                    for cl in list(clients):
-                        try:
-                            send_all(cl, frame)
-                        except Exception:
-                            drop_client(cl, clients, poller)
-                if ble is not None:                   # Bluetooth（Android）へ
+                if line:
                     ble.send_line(line)
             if len(buf) > 2048:                       # 暴走防止
                 buf = b""
         except Exception as e:
             print("UART/送信エラー:", e)
 
-        # 3) 定期: WiFi断の自動再接続（未接続でも再試行し、復帰でサーバ再構築）
-        #    再試行(connect_wifi)は最大~20秒ブロックし BLE 配信が一時的に途切れる。
-        #    BLE運用のみのときに毎回スキャンして途切れないよう、未接続時は間隔を空ける。
-        wifi_gap = 5000 if wlan.isconnected() else 30000
-        if time.ticks_diff(time.ticks_ms(), last_wifi_check) > wifi_gap:
-            last_wifi_check = time.ticks_ms()
-            if WIFI_NETWORKS and not wlan.isconnected():
-                print("WiFi未接続 → 再接続を試行")
-                for cl in list(clients):
-                    drop_client(cl, clients, poller)
-                if server is not None:
-                    try:
-                        poller.unregister(server); server.close()
-                    except Exception:
-                        pass
-                    server = None
-                if connect_wifi(wlan, WIFI_NETWORKS, wdt):
-                    server = build_server(poller)
-                    led.on()
-                    print("  WiFi再接続OK:", wlan.ifconfig()[0])
-
-        # 4) 定期: メモリ回収（ソケット枠の解放。step0で学んだ対策）
+        # 定期: メモリ回収
         if time.ticks_diff(time.ticks_ms(), last_gc) > 2000:
             last_gc = time.ticks_ms()
             gc.collect()

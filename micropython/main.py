@@ -10,6 +10,10 @@
 #     どちらも同じ生NMEAが流れるので、受信側の後段処理は共通。
 #   - 屋外無人運用向けに堅牢化: WiFi自動再接続 / ソケット再待受 /
 #     ウォッチドッグ / gc.collect。
+#   - GNSS の UART は起動時にボーレートを自動同期する：
+#     まず 38400 で有効な NMEA が来るか確認 → 来なければ工場出荷時の 9600 で
+#     開いて UBX-CFG-VALSET で 38400 へ切替 → 38400 で再確認。
+#     （9600 ではマルチGNSSのフル出力(特にGSV)が帯域に収まらず間引かれるため）
 #   - BLE は WiFi に依存しない。WiFi 未接続でも BLE は常時広告し続けるので、
 #     Android はネットワーク無しでも接続できる（iPhone の WS だけ不可）。
 #
@@ -46,7 +50,9 @@ WS_PORT    = 80             # ws://picow.local/ （80なのでポート指定不
 UART_ID    = 0
 UART_TX    = 0              # GP0 → M10S RX
 UART_RX    = 1              # GP1 ← M10S TX
-UART_BAUD  = 9600           # Switch Science MAX-M10S は 9600
+UART_BAUD         = 38400   # 目標ボーレート（起動時に M10S へ切替を指示する）
+UART_BAUD_DEFAULT = 9600    # M10S の工場出荷時ボーレート（電源投入直後はこれ）
+UART_RXBUF        = 4096    # 受信バッファ。WS/BLE 送信のブロック中に溢れないよう拡大
 WDT_TIMEOUT_MS = 8000       # RP2040 の上限付近
 SEND_TIMEOUT   = 1.0        # 1フレーム送信の上限秒。超えたらそのクライアントを切断
 WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -290,10 +296,93 @@ def build_server(poller):
     return s
 
 
+# ── GNSS UART のボーレート自動同期 ────────────────────────────────────────
+# M10S は設定保存用フラッシュを持たず、電源投入のたびに 9600 で起動する。
+# 一方ソフトリセット直後などは 38400 のまま動いていることもあるため、
+# どちらの状態からでも自力で 38400 に揃うよう、起動時に検出＋切替を行う。
+
+def _open_uart(baud):
+    return UART(UART_ID, baudrate=baud, tx=Pin(UART_TX), rx=Pin(UART_RX),
+                rxbuf=UART_RXBUF)
+
+
+def _nmea_checksum_ok(line):
+    # b"$....*hh" 形式の1行のチェックサムを検証（$ と * の間を XOR）
+    star = line.rfind(b"*")
+    if not line.startswith(b"$") or star < 1 or len(line) < star + 3:
+        return False
+    cs = 0
+    for b in line[1:star]:
+        cs ^= b
+    try:
+        return cs == int(line[star + 1:star + 3], 16)
+    except ValueError:
+        return False
+
+
+def _valid_nmea_seen(uart, wait_ms=1500):
+    # wait_ms 以内に正しいチェックサムの NMEA 行が1つでも来たら True。
+    # ボーレート不一致時は文字化けバイトしか来ないので False になる。
+    buf = b""
+    deadline = time.ticks_add(time.ticks_ms(), wait_ms)
+    while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+        d = uart.read() if uart.any() else None
+        if d:
+            buf += d
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                if _nmea_checksum_ok(line.strip()):
+                    return True
+            if len(buf) > 512:        # 文字化けで改行が来ない場合の暴走防止
+                buf = buf[-256:]
+        time.sleep_ms(20)
+    return False
+
+
+def _ubx_valset_baud(baud):
+    # UBX-CFG-VALSET で CFG-UART1-BAUDRATE(0x40520001) を RAM+BBR 層に設定する
+    # フレームを組み立てる（チェックサムは 8bit Fletcher）。
+    payload = (bytes([0x00, 0x03, 0x00, 0x00])          # version, layers(RAM|BBR), 予約
+               + (0x40520001).to_bytes(4, "little")     # キー: CFG-UART1-BAUDRATE
+               + baud.to_bytes(4, "little"))            # 値: ボーレート(U4)
+    body = bytes([0x06, 0x8A]) + len(payload).to_bytes(2, "little") + payload
+    ck_a = ck_b = 0
+    for b in body:
+        ck_a = (ck_a + b) & 0xFF
+        ck_b = (ck_b + ck_a) & 0xFF
+    return b"\xb5\x62" + body + bytes([ck_a, ck_b])
+
+
+def init_gnss_uart():
+    for attempt in range(3):
+        # 1) 既に目標ボーレートで動いているか（ソフトリセット直後・切替済みの再確認）
+        uart = _open_uart(UART_BAUD)
+        if _valid_nmea_seen(uart):
+            print("✓ GNSS: %d baud で受信中" % UART_BAUD)
+            return uart
+        uart.deinit()
+
+        # 2) 工場出荷時ボーレートで受けられたら、目標ボーレートへの切替を指示
+        uart = _open_uart(UART_BAUD_DEFAULT)
+        if _valid_nmea_seen(uart):
+            print("  GNSS: %d baud を検出 → %d baud へ切替指示" % (UART_BAUD_DEFAULT, UART_BAUD))
+            uart.write(_ubx_valset_baud(UART_BAUD))
+            time.sleep_ms(200)        # 送信完了とモジュール側の切替を待つ
+        else:
+            print("  GNSS: NMEA未検出 (試行 %d/3)" % (attempt + 1))
+        uart.deinit()
+        # 次のループ先頭で 38400 を再確認する（＝切替の検証を兼ねる）
+
+    # 切替できず（GNSS未接続・故障等）：従来どおり 9600 で開いて継続する。
+    # 後から 9600 のモジュールが繋がれば、少なくとも従来と同じ動作になる。
+    print("！ GNSS: %d baud へ切替できず。%d baud で継続" % (UART_BAUD, UART_BAUD_DEFAULT))
+    return _open_uart(UART_BAUD_DEFAULT)
+
+
 # ============================ メイン ============================
 def main():
-    # UART（GNSS）
-    uart = UART(UART_ID, baudrate=UART_BAUD, tx=Pin(UART_TX), rx=Pin(UART_RX))
+    # UART（GNSS）。ボーレートは自動同期（38400 へ引き上げ、失敗時 9600）
+    uart = init_gnss_uart()
 
     # Bluetooth(BLE) は WiFi に依存しないので先に起動し、常時広告する。
     # （Android はネットワーク無しでも、この時点からすぐ接続できる）

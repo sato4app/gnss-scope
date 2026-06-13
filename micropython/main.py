@@ -90,7 +90,8 @@ class BlePeripheral:
         self._ble = bluetooth.BLE()
         self._ble.active(True)
         self._ble.irq(self._irq)
-        ((self._tx_handle, self._rx_handle),) = self._ble.gatts_register_services((nus_service,))
+        # RX(write) ハンドルは未使用（NUS の形を保つため特性のみ登録）
+        ((self._tx_handle, _),) = self._ble.gatts_register_services((nus_service,))
         # conn_handle -> notify 1回あたりの最大ペイロード長（ATT_MTU-3）
         self._conns = {}
         self._payload = _adv_payload(name=name, services=[nus_uuid])
@@ -143,9 +144,6 @@ class BlePeripheral:
                     # 途切れた行は受信側のチェックサム検証で弾かれる）
                     break
                 i += chunk_len
-
-    def count(self):
-        return len(self._conns)
 
 
 # ── GNSS UART のボーレート自動同期 ────────────────────────────────────────

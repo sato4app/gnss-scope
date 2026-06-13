@@ -48,11 +48,8 @@ export class EpochAssembler {
       pdop: null,
       vdop: null,
       status: null,
-      speedKn: null,
-      course: null,
       usedSVs: [], // {constellation, prn}
       satsInView: [], // {constellation, prn, elev, azim, snr}
-      inViewCount: {}, // constellation -> 衛星数
       sentenceTypes: {}, // 種別カウント（品質統計用）
       invalidCount: 0,
     };
@@ -72,8 +69,6 @@ export class EpochAssembler {
         break;
       case 'RMC':
         c.status = s.status;
-        c.speedKn = s.speedKn;
-        c.course = s.course;
         if (c.lat == null) {
           c.lat = s.lat;
           c.lon = s.lon;
@@ -86,7 +81,6 @@ export class EpochAssembler {
         for (const prn of s.usedSVs) c.usedSVs.push({ constellation: s.constellation, prn });
         break;
       case 'GSV':
-        if (s.inView != null) c.inViewCount[s.constellation] = s.inView;
         for (const sat of s.sats) c.satsInView.push(sat);
         break;
     }

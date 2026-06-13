@@ -22,6 +22,7 @@ gnss-monitor/
     recorder.js      生フレームをIndexedDBに収録（再生用）
     app.js           配線：BLE→行バッファ→収録→パース→集約→3ビュー
     views/
+      view-utils.js   ビュー共通処理（DPR対応キャンバス・使用衛星PRNセット）
       fix-status.js   測位品質・DOP・座標・有効測位率
       sky-plot.js     極座標の衛星配置（使用/可視、SNRで大きさ）
       snr-chart.js    衛星ごとのC/N0棒グラフ

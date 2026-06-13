@@ -34,11 +34,4 @@ export class LineBuffer {
 
     return out;
   }
-
-  // 接続終了時などに残りを吐き出す
-  flush() {
-    const rest = this.buf.trim();
-    this.buf = '';
-    return rest ? [rest] : [];
-  }
 }

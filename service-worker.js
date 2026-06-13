@@ -6,7 +6,7 @@
 //   → 圏外でも瞬時に開き、オンラインなら次回表示で最新版になる。
 // BLE/WebSocket のライブデータは fetch を通らないので、この SW の影響を受けない。
 
-const CACHE_NAME = 'gnss-scope-v2';
+const CACHE_NAME = 'gnss-scope-v3';
 
 const ASSETS = [
   './',
@@ -19,6 +19,7 @@ const ASSETS = [
   './js/epoch.js',
   './js/ble-client.js',
   './js/recorder.js',
+  './js/views/view-utils.js',
   './js/views/fix-status.js',
   './js/views/sky-plot.js',
   './js/views/snr-chart.js',

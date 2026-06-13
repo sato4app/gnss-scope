@@ -1,7 +1,7 @@
 // NMEA 0183 パーサ（GGA / RMC / GSA / GSV）＋チェックサム検証
 // マルチGNSS（GP/GL/GA/GB/BD/GQ/GN）対応。
 
-export const CONSTELLATIONS = {
+const CONSTELLATIONS = {
   GP: { id: 'gps', label: 'GPS' },
   GL: { id: 'glonass', label: 'GLONASS' },
   GA: { id: 'galileo', label: 'Galileo' },
@@ -25,12 +25,12 @@ export const CONSTELLATION_COLORS = {
 // GSA の systemId（NMEA 4.10+）→ コンステレーション
 const SYSTEM_ID = { '1': 'gps', '2': 'glonass', '3': 'galileo', '4': 'beidou', '5': 'qzss' };
 
-export function constellationFromTalker(talker) {
+function constellationFromTalker(talker) {
   return (CONSTELLATIONS[talker] || CONSTELLATIONS.GN).id;
 }
 
 // チェックサム検証：$ と * の間の全文字を XOR し、* の後ろの16進2桁と比較
-export function validateChecksum(sentence) {
+function validateChecksum(sentence) {
   if (!sentence.startsWith('$')) return false;
   const star = sentence.indexOf('*');
   if (star < 0) return false;
@@ -59,7 +59,7 @@ function parseTime(t) {
   const h = +t.slice(0, 2);
   const m = +t.slice(2, 4);
   const s = parseFloat(t.slice(4));
-  return { h, m, s, str: `${pad(h)}:${pad(m)}:${pad(Math.floor(s))}`, key: t };
+  return { str: `${pad(h)}:${pad(m)}:${pad(Math.floor(s))}`, key: t };
 }
 
 // 1行をパースして構造化する。
@@ -101,7 +101,6 @@ function parseGGA(f) {
     numSV: num(f[7]),
     hdop: num(f[8]),
     alt: num(f[9]),
-    geoidSep: num(f[11]),
   };
 }
 
@@ -111,9 +110,6 @@ function parseRMC(f) {
     status: f[2], // A=有効 V=無効
     lat: parseCoord(f[3], f[4]),
     lon: parseCoord(f[5], f[6]),
-    speedKn: num(f[7]),
-    course: num(f[8]),
-    date: f[9] || null, // ddmmyy
   };
 }
 
@@ -127,7 +123,6 @@ function parseGSA(f, talker) {
     fixMode: num(f[2]), // 1=測位なし 2=2D 3=3D
     usedSVs,
     pdop: num(f[15]),
-    hdop: num(f[16]),
     vdop: num(f[17]),
     constellation: SYSTEM_ID[f[18]] || constellationFromTalker(talker),
   };
@@ -146,5 +141,5 @@ function parseGSV(f, talker) {
       constellation: constellationFromTalker(talker),
     });
   }
-  return { totalMsgs: +f[1] || 1, msgNum: +f[2] || 1, inView: num(f[3]), sats };
+  return { sats };
 }

@@ -1,31 +1,23 @@
 // スカイプロット：仰角（中心90°→外周0°）と方位角（北を上、時計回り）で衛星を配置。
 // 使用中＝塗りつぶし、可視のみ＝中抜き。円の大きさ＝SNR。色＝コンステレーション。
 import { CONSTELLATION_COLORS } from '../nmea.js';
+import { setupHiDpiCanvas, usedPrnSet } from './view-utils.js';
 
 export class SkyPlotView {
   constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this._resize();
-    window.addEventListener('resize', () => {
-      this._resize();
-      if (this._last) this.update(this._last);
+    const { ctx, size } = setupHiDpiCanvas(canvas, () => this._last && this.update(this._last), {
+      square: true,
+      fallbackW: 320,
+      fallbackH: 320,
     });
-  }
-
-  _resize() {
-    const size = Math.min(this.canvas.clientWidth || 320, this.canvas.clientHeight || 320);
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = size * dpr;
-    this.canvas.height = size * dpr;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.size = size;
+    this.ctx = ctx;
+    this._size = size;
   }
 
   update(epoch) {
     this._last = epoch;
     const ctx = this.ctx;
-    const S = this.size;
+    const S = this._size.w;
     const cx = S / 2;
     const cy = S / 2;
     const R = S / 2 - 18;
@@ -56,8 +48,7 @@ export class SkyPlotView {
     ctx.fillText('E', cx + R + 9, cy);
     ctx.fillText('W', cx - R - 9, cy);
 
-    // 使用衛星PRN（NMEA拡張番号はコンステ間でほぼ一意なのでPRNで照合）
-    const used = new Set((epoch.usedSVs || []).map((u) => u.prn));
+    const used = usedPrnSet(epoch);
 
     for (const sat of epoch.satsInView || []) {
       if (sat.elev == null || sat.azim == null) continue;

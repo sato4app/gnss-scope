@@ -3,6 +3,7 @@
 // 描画は uPlot（vendor/uplot にローカル同梱, グローバル window.uPlot）。1Hz・長時間でも軽い再描画を狙う（NFR-3）。
 //
 // 既存土台（js/epoch.js の Epoch）はそのまま入力に使う。再実装しない。
+import { usedPrnSet } from './view-utils.js';
 
 const COLORS = {
   sv: '#5aa9ff', // 使用衛星数
@@ -12,7 +13,7 @@ const COLORS = {
 
 // エポックから平均SNRを出す：使用衛星があれば使用衛星、無ければ可視衛星で平均。
 function avgSnr(epoch) {
-  const used = new Set((epoch.usedSVs || []).map((u) => u.prn));
+  const used = usedPrnSet(epoch);
   const inView = (epoch.satsInView || []).filter((s) => s.snr != null);
   const usedSnr = inView.filter((s) => used.has(s.prn)).map((s) => s.snr);
   const pool = usedSnr.length ? usedSnr : inView.map((s) => s.snr);
@@ -100,11 +101,5 @@ export class TimeSeriesView {
     if (drop > 0) for (const col of this.data) col.splice(0, drop);
 
     this.plot.setData(this.data);
-  }
-
-  reset() {
-    this._t0 = null;
-    this.data = [[], [], [], []];
-    if (this.plot) this.plot.setData(this.data);
   }
 }

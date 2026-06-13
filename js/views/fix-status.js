@@ -42,11 +42,6 @@ export class FixStatusView {
     const rate = this.total ? (100 * this.validCount) / this.total : 0;
     this.$('.v-rate').textContent = `${rate.toFixed(1)} %`;
   }
-
-  reset() {
-    this.total = 0;
-    this.validCount = 0;
-  }
 }
 
 function template() {

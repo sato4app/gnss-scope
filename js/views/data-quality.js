@@ -6,6 +6,7 @@
 // 入力は既存土台の Epoch（js/epoch.js）。sentenceTypes / invalidCount を活用する。
 //
 // 受け入れ基準：1Hz 設定時に実測間隔のばらつきを可視化（ヒストグラム）。
+import { setupHiDpiCanvas } from './view-utils.js';
 
 const TYPES = ['GGA', 'RMC', 'GSA', 'GSV'];
 
@@ -17,13 +18,12 @@ export class DataQualityView {
     this.el = el;
     this.el.innerHTML = template();
     this.$ = (s) => this.el.querySelector(s);
-    this.canvas = this.$('.dq-hist');
-    this.ctx = this.canvas.getContext('2d');
-    this._resize();
-    window.addEventListener('resize', () => {
-      this._resize();
-      this._drawHist();
+    const { ctx, size } = setupHiDpiCanvas(this.$('.dq-hist'), () => this._drawHist(), {
+      fallbackW: 400,
+      fallbackH: 120,
     });
+    this.ctx = ctx;
+    this._size = size;
     this.reset();
   }
 
@@ -111,22 +111,11 @@ export class DataQualityView {
     this._drawHist();
   }
 
-  _resize() {
-    const w = this.canvas.clientWidth || 400;
-    const h = this.canvas.clientHeight || 120;
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = w * dpr;
-    this.canvas.height = h * dpr;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.cw = w;
-    this.ch = h;
-  }
-
   // エポック間隔の分布をシンプルな棒で描く
   _drawHist() {
     const ctx = this.ctx;
-    const W = this.cw;
-    const H = this.ch;
+    const W = this._size.w;
+    const H = this._size.h;
     ctx.clearRect(0, 0, W, H);
 
     const padB = 16;

@@ -1,7 +1,8 @@
-# GNSS Scope (M10S / NMEA over WebSocket)
+# GNSS Scope (M10S / NMEA over Bluetooth LE)
 
-PicoW + MAX-M10S が WebSocket で流す生 NMEA を受け、Fix 状態・スカイプロット・SNR を
+PicoW + MAX-M10S が Bluetooth(BLE) で流す生 NMEA を受け、Fix 状態・スカイプロット・SNR を
 リアルタイム表示する Vanilla JS（ES モジュール）の受信基盤＋ライブ表示。
+受信側は Web Bluetooth 対応端末（Android の Chrome/Edge 等）が必須。
 
 ## 構成
 
@@ -15,12 +16,11 @@ gnss-monitor/
   css/style.css
   js/
     nmea.js          NMEAパーサ（GGA/RMC/GSA/GSV）＋チェックサム
-    line-buffer.js   WSフレームを改行で行に再分割（断片結合）
+    line-buffer.js   受信フレームを改行で行に再分割（断片結合）
     epoch.js         同一時刻のセンテンスを1エポックに集約
-    ws-client.js     WebSocket接続（指数バックオフで自動再接続）／iPhone向け
-    ble-client.js    Bluetooth(BLE/Web Bluetooth)接続／Android向け
+    ble-client.js    Bluetooth(BLE/Web Bluetooth)接続（自動再接続つき）
     recorder.js      生フレームをIndexedDBに収録（再生用）
-    app.js           配線：WS→行バッファ→収録→パース→集約→3ビュー
+    app.js           配線：BLE→行バッファ→収録→パース→集約→3ビュー
     views/
       fix-status.js   測位品質・DOP・座標・有効測位率
       sky-plot.js     極座標の衛星配置（使用/可視、SNRで大きさ）
@@ -37,7 +37,7 @@ gnss-monitor/
 エポック間隔のジッタ（ヒストグラム）・GGA 欠損率を集計します。いずれも既存の
 `EpochAssembler.onEpoch` が渡す Epoch をそのまま入力にしています。
 
-データの流れ：`WS受信 → 行バッファ → 収録 → パース＋検証 → エポック確定 → 3ビュー更新`。
+データの流れ：`BLE受信 → 行バッファ → 収録 → パース＋検証 → エポック確定 → 3ビュー更新`。
 
 ## ローカルで動かす
 
@@ -62,36 +62,18 @@ BLE 接続なら Pico と端末だけで完結するため、屋外でも PC は
   （stale-while-revalidate）。
 - キャッシュを確実に作り直したいときは `service-worker.js` の `CACHE_NAME` の版数を上げてください。
 
-## Pico に繋ぐ（WebSocket / Bluetooth の選択式）
+## Pico に繋ぐ（Bluetooth(BLE) 固定）
 
-Pico W 側 `micropython/main.py` は、生 NMEA を **WebSocket と Bluetooth(BLE) の両方**で
-同時配信します。受信側は上部の「接続方式」セレクタで選びます（端末に応じて自動で初期選択）。
+Pico W 側 `micropython/main.py` は、生 NMEA を **Bluetooth(BLE, Nordic UART Service)** で
+配信します（WiFi/WebSocket は廃止。ルーター・PC・config.py は不要）。
 
-| 端末 | 方式 | 理由 |
-|---|---|---|
-| iPhone / iPad | **WebSocket** | iOS は Web Bluetooth 非対応のため |
-| Android | **Bluetooth(BLE)** | Web Bluetooth 対応。HTTPS ページからも接続でき、IP 入力も不要 |
-
-### WebSocket（iPhone）
-1. セレクタで「WebSocket」を選ぶ。
-2. 入力欄に `ws://<PicoのIP>:<ポート>`（既定 `ws://picow.local/`）を入れて「接続」。
-3. 切断されても自動で再接続します（接続状態は右上に表示）。
-
-### Bluetooth（Android）
-1. セレクタで「Bluetooth」を選ぶ（URL 欄は不要なので隠れます）。
+1. HTTPS のページ（GitHub Pages 等）または `http://localhost` でこの画面を開く
+   （Web Bluetooth はセキュアコンテキスト必須。`http://<IP>` では使えません）。
 2. 「接続」を押すとデバイス選択ダイアログが出るので `picow` を選ぶ。
 3. 以後の切断は自動再接続（既知デバイスなので再選択は不要）。
-4. **HTTPS ページ（Vercel 等）からそのまま接続できます**（下記の ws:// 制約を受けません）。
-   Bluetooth は NMEA を Nordic UART Service(NUS) で notify 配信します
-   （UUID は `js/ble-client.js` と `main.py` で一致）。
-   BLE は WiFi に依存しないため、Pico が WiFi 圏外でも Android は接続可能です。
 
-### 重要：HTTPS と ws:// の組み合わせは不可（WebSocket のみの制約）
-
-HTTPS のページ（Vercel 等）からは `ws://`（非暗号化）に接続できません（mixed content で
-ブラウザが遮断）。iPhone で現場ライブ取り込みするときは、この画面を `http://localhost` か
-LAN 内の HTTP サーバから開いて `ws://<PicoのIP>` に繋いでください。
-Android は Bluetooth を使えば HTTPS 本番ページのままライブ取り込みできます。
+- NMEA は NUS の notify で配信されます（UUID は `js/ble-client.js` と `main.py` で一致）。
+- iPhone/iPad は Web Bluetooth 非対応のため、本構成では接続できません（Android 必須）。
 
 ## 収録と再生
 

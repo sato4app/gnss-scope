@@ -1,10 +1,10 @@
 // Web Bluetooth で Pico W の BLE(Nordic UART Service) から生 NMEA を受ける。
-// WebSocket 版(NmeaWebSocket)と同じ I/F：connect()/disconnect()/onFrame/onStatus/shouldRun。
+// I/F：connect()/disconnect()/onFrame/onStatus/shouldRun。
 // onFrame には受信テキスト（断片可・行に揃っていなくてよい）をそのまま渡し、
-// 行への再分割は LineBuffer 側に任せる（WS 版と完全に同じ後段に乗る）。
+// 行への再分割は LineBuffer 側に任せる。
 //
 // 注意：Web Bluetooth は Android Chrome/Edge・デスクトップ Chrome/Edge のみ。
-// iOS(iPhone/iPad)は全ブラウザで非対応のため、iPhone では WebSocket を使う。
+// iOS(iPhone/iPad)は全ブラウザで非対応（本構成では Android 必須）。
 // またセキュアコンテキスト(HTTPS / localhost)が必須。
 
 // Nordic UART Service（Pico 側 main.py と一致させること）

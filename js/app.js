@@ -1,8 +1,7 @@
-// 全体の配線：WebSocket → 行バッファ → 収録 → パース → エポック集約 → 3ビュー更新。
+// 全体の配線：Bluetooth(BLE) → 行バッファ → 収録 → パース → エポック集約 → 3ビュー更新。
 import { LineBuffer } from './line-buffer.js';
 import { parseSentence } from './nmea.js';
 import { EpochAssembler } from './epoch.js';
-import { NmeaWebSocket } from './ws-client.js';
 import { NmeaBle } from './ble-client.js';
 import { Recorder } from './recorder.js';
 import { FixStatusView } from './views/fix-status.js';
@@ -43,15 +42,13 @@ function handleFrame(frame) {
 
 // ---- UI ----
 const els = {
-  transport: document.getElementById('transport'),
-  url: document.getElementById('ws-url'),
   connect: document.getElementById('btn-connect'),
   status: document.getElementById('conn-status'),
   dot: document.querySelector('.brand .dot'),
   rec: document.getElementById('btn-record'),
   recState: document.getElementById('rec-state'),
   demo: document.getElementById('btn-demo'),
-  hint: document.getElementById('transport-hint'),
+  hint: document.getElementById('ble-hint'),
 };
 
 let socket = null;
@@ -76,19 +73,9 @@ function bleUnavailableReason() {
   return null;
 }
 
-// 接続方式に応じて URL 欄の表示と注意書きを切り替える
-// （Bluetooth はデバイス選択ダイアログで繋ぐため URL 入力は不要）
-function applyTransport() {
-  const ble = els.transport.value === 'ble';
-  els.url.style.display = ble ? 'none' : '';
-  els.hint.textContent = ble ? bleUnavailableReason() || '「接続」で picow を選択' : '';
-  els.hint.style.color = ble && bleUnavailableReason() ? 'var(--bad)' : 'var(--muted)';
-}
-els.transport.addEventListener('change', applyTransport);
-// 既定値：Web Bluetooth が使える端末(Android Chrome/HTTPS 等)なら Bluetooth、
-// 使えない(iPhone / http 接続 等)なら WebSocket を初期選択。
-els.transport.value = bleUnavailableReason() ? 'ws' : 'ble';
-applyTransport();
+// 接続は Bluetooth(BLE) 固定。使えない環境（iPhone / http 接続 等）は注意書きで知らせる。
+els.hint.textContent = bleUnavailableReason() || '「接続」で picow を選択';
+els.hint.style.color = bleUnavailableReason() ? 'var(--bad)' : 'var(--muted)';
 
 els.connect.addEventListener('click', async () => {
   if (socket && socket.shouldRun) {
@@ -101,18 +88,12 @@ els.connect.addEventListener('click', async () => {
   }
   stopDemo();
   els.connect.textContent = '切断';
-  if (els.transport.value === 'ble') {
-    socket = new NmeaBle({ onFrame: handleFrame, onStatus: setStatus });
-    await socket.connect();
-    // 選択キャンセル／非対応で接続に至らなかった場合はボタンを戻す
-    if (!socket.shouldRun) {
-      socket = null;
-      els.connect.textContent = '接続';
-    }
-  } else {
-    const url = els.url.value.trim();
-    socket = new NmeaWebSocket(url, { onFrame: handleFrame, onStatus: setStatus });
-    socket.connect();
+  socket = new NmeaBle({ onFrame: handleFrame, onStatus: setStatus });
+  await socket.connect();
+  // 選択キャンセル／非対応で接続に至らなかった場合はボタンを戻す
+  if (!socket.shouldRun) {
+    socket = null;
+    els.connect.textContent = '接続';
   }
 });
 
@@ -123,7 +104,7 @@ els.rec.addEventListener('click', async () => {
     els.rec.textContent = '収録開始';
     els.recState.textContent = `停止（${n} 行）`;
   } else {
-    await recorder.startSession({ note: els.url.value.trim() });
+    await recorder.startSession({ note: 'BLE' });
     els.rec.textContent = '収録停止';
     els.recState.textContent = '収録中…';
   }

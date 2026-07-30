@@ -1,13 +1,24 @@
 // 設定タブの配線：測位・記録パラメータ / 地図種別 / ライブ軌跡 ON-OFF と、
-// 「アプリのバージョン（Service Worker キャッシュ）」の確認・更新。
+// 「アプリのバージョン」（sw.js の APP_VERSION）の確認・更新。
 // 設定値は settings オブジェクトを直接書き換え、IndexedDB(settings) へ永続化する。
 // 同じタブ内でも、タイル事前DL は tile-cache.js、モック配信は connect-ui.js、
 // Wake Lock 表示は record-ui.js が担当する（機能ごとにまとめる方針）。
 import { $ } from './view-utils.js';
 
-// sw.js のシェルキャッシュ名（= 版数）を読み取る
-const VERSION_RE = /SHELL_CACHE\s*=\s*'(gnss-scope-shell-[^']+)'/;
+// sw.js の版数 APP_VERSION（'yyyy-mm-dd.n' 形式）を読み取る
+const VERSION_RE = /APP_VERSION\s*=\s*'([^']+)'/;
 const CACHE_PREFIX = 'gnss-scope-shell-';
+
+// 表示・比較は接頭辞なしの版数で行う。
+// 旧SW（版数ではなくキャッシュ名を返す）やキャッシュ名から拾った場合に備えて外す。
+const bareVersion = (v) => (v ? v.replace(CACHE_PREFIX, '') : null);
+
+// 新旧比較用の数値。'yyyy-mm-dd.n' → yyyymmddnnnn。
+// 読めない旧形式（'v3' など）は 0＝最も古い扱いにする。
+function versionOrder(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})\.(\d+)$/.exec(bareVersion(v) || '');
+  return m ? +(m[1] + m[2] + m[3] + m[4].padStart(4, '0')) : 0;
+}
 
 export function initSettingsUI({ settings, storage, mapView, defaults }) {
   // ---- 設定行 ----
@@ -90,20 +101,19 @@ export function initSettingsUI({ settings, storage, mapView, defaults }) {
         };
         ctrl.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
       });
-      if (version) return version;
+      if (version) return bareVersion(version);
     }
     try {
       const keys = (await caches.keys()).filter((k) => k.startsWith(CACHE_PREFIX));
       // 新旧が同居する一瞬は古い方（＝制御中のSW）を採用する
-      const num = (k) => parseInt(k.match(/v(\d+)$/)?.[1] ?? '0', 10);
-      keys.sort((a, b) => num(a) - num(b));
-      return keys[0] || null;
+      keys.sort((a, b) => versionOrder(a) - versionOrder(b));
+      return bareVersion(keys[0]);
     } catch (e) {
       return null;
     }
   }
 
-  // 最新バージョン：サーバー上の sw.js を取得して SHELL_CACHE 定数を読む。
+  // 最新バージョン：サーバー上の sw.js を取得して APP_VERSION 定数を読む。
   // クエリ付き＋no-store で、SWのキャッシュにもHTTPキャッシュにも当てない。
   async function getLatestVersion() {
     const res = await fetch(`sw.js?_=${Date.now()}`, { cache: 'no-store' });

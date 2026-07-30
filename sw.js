@@ -1,7 +1,13 @@
 // Service Worker：アプリシェルのプリキャッシュ＋地理院地図タイルのキャッシュ。
 // タイルは cache-first（オフラインでもキャッシュ済範囲の地図が出る）。
 // タイルキャッシュ名は js/tile-cache.js の事前ダウンロードと共有する。
-const SHELL_CACHE = 'gnss-scope-shell-v3';
+
+// 版数 'yyyy-mm-dd.n'（更新日 ＋ 同日内の連番。日付が変わったら 1 に戻す）。
+// アプリを更新したら必ず改める（この値が変わることで新SWのインストールが走る）。
+// 設定タブの「アプリのバージョン」はこの値をそのまま表示する（js/settings-ui.js）。
+const APP_VERSION = '2026-07-30.1';
+// キャッシュ名は接頭辞つき（activate の掃除で他のキャッシュと区別するため）
+const SHELL_CACHE = `gnss-scope-shell-${APP_VERSION}`;
 const TILE_CACHE = 'gsi-tiles';
 
 const APP_SHELL = [
@@ -65,7 +71,7 @@ self.addEventListener('activate', (event) => {
 // 設定タブからのバージョン問い合わせに応答する（js/settings-ui.js）
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'GET_VERSION') {
-    event.ports[0]?.postMessage({ version: SHELL_CACHE });
+    event.ports[0]?.postMessage({ version: APP_VERSION });
   }
 });
 

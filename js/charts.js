@@ -52,6 +52,12 @@ function fillCircle(ctx, x, y, r, color) {
   ctx.fill();
 }
 
+// 正方形ビュー（スカイプロット / 散布図）の論理サイズ：CSS ボックスの短辺に合わせる
+function squareSize(canvas, fallback) {
+  const s = Math.min(canvas.clientWidth || fallback, canvas.clientHeight || fallback);
+  return { w: s, h: s };
+}
+
 // 方位ラベル（N/S/E/W）を中心から距離 d の位置に描く
 function drawCompass(ctx, cx, cy, d, fontPx) {
   ctx.fillStyle = LABEL_COLOR;
@@ -137,11 +143,14 @@ class CanvasView {
 // 仰角（中心90°→外周0°）と方位角（北を上、時計回り）で衛星を配置。
 // 使用中＝塗りつぶし、可視のみ＝中抜き。円の大きさ＝SNR。色＝コンステレーション。
 // GSV が欠けた秒はブランクにせず前フレームを保持する（キャリーフォワード）。
+// 2列レイアウトでは表示が小さくなるため、記号を縮小し PRN ラベルは省く。
+
+const SKY_BASE = 320; // 記号サイズの基準幅 [CSS px]
+const SKY_PRN_MIN = 240; // PRN ラベルを描く最小幅（これ未満は重なって読めない）
 
 export class SkyPlotView extends CanvasView {
   _computeSize() {
-    const s = Math.min(this.canvas.clientWidth || 320, this.canvas.clientHeight || 320);
-    return { w: s, h: s };
+    return squareSize(this.canvas, 320);
   }
 
   // クリア＋グリッド（仰角リング 0/30/60° と方位の十字・NSEW ラベル）を描き、幾何を返す
@@ -163,6 +172,8 @@ export class SkyPlotView extends CanvasView {
 
     const ctx = this.ctx;
     const { cx, cy, R } = this._drawGrid();
+    const k = Math.max(0.55, Math.min(1, this.w / SKY_BASE)); // 表示幅に応じた記号の縮小率
+    const showPrn = this.w >= SKY_PRN_MIN;
     ctx.textAlign = 'center';
     for (const sat of epoch.satellites) {
       if (sat.elev == null || sat.azim == null) continue;
@@ -172,7 +183,7 @@ export class SkyPlotView extends CanvasView {
       const x = cx + r * Math.sin(a);
       const y = cy - r * Math.cos(a);
       const color = CONSTELLATION_COLORS[sat.sys] || CONSTELLATION_COLORS.unknown;
-      const rad = sat.snr != null ? 4 + Math.min(sat.snr, 50) / 10 : 4;
+      const rad = (sat.snr != null ? 4 + Math.min(sat.snr, 50) / 10 : 4) * k;
 
       if (sat.used) {
         fillCircle(ctx, x, y, rad, color);
@@ -184,9 +195,11 @@ export class SkyPlotView extends CanvasView {
         ctx.stroke();
       }
 
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.font = MONO(9);
-      ctx.fillText(String(sat.prn), x, y + rad + 7);
+      if (showPrn) {
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.font = MONO(9);
+        ctx.fillText(String(sat.prn), x, y + rad + 7);
+      }
     }
   }
 }
@@ -269,8 +282,7 @@ export class SnrChartView extends CanvasView {
 
 export class ScatterPlotView extends CanvasView {
   _computeSize() {
-    const s = Math.min(this.canvas.clientWidth || 280, 360);
-    return { w: s, h: s };
+    return squareSize(this.canvas, 280);
   }
 
   clear() {

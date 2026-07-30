@@ -247,6 +247,28 @@ body {
 
 .sky-canvas { width: min(86vw, 340px); height: min(86vw, 340px); display: block; margin: 0 auto; }
 .snr-canvas { width: 100%; height: 170px; display: block; }
+
+/* 解析タブは2列（上段: スカイプロット / DRMS、下段: SNR / DOP）。
+   見出し行と本体行を交互に置くことで左右の図の上端が揃う。
+   canvas は列幅に合わせて伸縮させる（実解像度は charts.js が client サイズから決める） */
+.an-grid {
+  display: grid;
+  /* minmax(0, …) で canvas の内在サイズに列幅を引っ張られないようにする */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+  align-items: start;
+}
+.an-grid > .sub-head { align-self: end; min-width: 0; }
+.an-cell { min-width: 0; }
+.an-cell canvas { max-width: 100%; min-width: 0; }
+.an-cell .sky-canvas, .an-cell .scatter-canvas {
+  width: 100%;
+  max-width: 340px; /* 広い画面で極端に大きくしない（記号サイズの基準幅に合わせる） */
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+.an-cell .snr-canvas { height: 150px; }
+.an-grid > .an-wide { grid-column: 1 / -1; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; font-size: 11px; color: var(--muted); }
 .legend .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 4px; }
 

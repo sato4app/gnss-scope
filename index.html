@@ -112,30 +112,42 @@
         <div id="an-epoch-label" class="mono">—</div>
       </div>
 
-      <div class="sub-head">スカイプロット（半径=仰角 / 角度=方位 / 大きさ=SNR / 塗り=使用中）</div>
-      <canvas id="sky-plot" class="sky-canvas"></canvas>
-      <div id="legend" class="legend"></div>
+      <!-- 上段: スカイプロット / DRMS、下段: SNR / DOP の2列レイアウト。
+           見出しと本体を別セルにして、左右の図の高さ位置を揃えている -->
+      <div class="an-grid">
+        <div class="sub-head">スカイプロット（半径=仰角 / 角度=方位 / 大きさ=SNR / 塗り=使用中）</div>
+        <div class="sub-head">DRMS（記録データのばらつき）</div>
+        <div class="an-cell">
+          <canvas id="sky-plot" class="sky-canvas"></canvas>
+          <div id="legend" class="legend"></div>
+        </div>
+        <div class="an-cell">
+          <canvas id="an-scatter" class="scatter-canvas"></canvas>
+        </div>
+        <!-- 集計テキストは行数が多いため2列ぶち抜きで散布図の下に置く -->
+        <div id="an-drms" class="result-box an-wide"></div>
 
-      <div class="sub-head">SNR（C/N0）チャート</div>
-      <canvas id="snr-chart" class="snr-canvas"></canvas>
-      <div id="an-sys" class="sys-chips">—</div>
-
-      <div class="sub-head">DOP</div>
-      <div class="dop-rows">
-        <div class="dop-row"><span>PDOP</span><div class="bar"><i id="bar-pdop"></i></div><b id="an-pdop" class="mono">—</b></div>
-        <div class="dop-row"><span>HDOP</span><div class="bar"><i id="bar-hdop"></i></div><b id="an-hdop" class="mono">—</b></div>
-        <div class="dop-row"><span>VDOP</span><div class="bar"><i id="bar-vdop"></i></div><b id="an-vdop" class="mono">—</b></div>
+        <div class="sub-head">SNR（C/N0）チャート</div>
+        <div class="sub-head">DOP</div>
+        <div class="an-cell">
+          <canvas id="snr-chart" class="snr-canvas"></canvas>
+          <div id="an-sys" class="sys-chips">—</div>
+        </div>
+        <div class="an-cell">
+          <div class="dop-rows">
+            <div class="dop-row"><span>PDOP</span><div class="bar"><i id="bar-pdop"></i></div><b id="an-pdop" class="mono">—</b></div>
+            <div class="dop-row"><span>HDOP</span><div class="bar"><i id="bar-hdop"></i></div><b id="an-hdop" class="mono">—</b></div>
+            <div class="dop-row"><span>VDOP</span><div class="bar"><i id="bar-vdop"></i></div><b id="an-vdop" class="mono">—</b></div>
+          </div>
+        </div>
       </div>
-      <dl class="grid" style="margin-top: 8px">
+
+      <dl class="grid" style="margin-top: 10px">
         <div><dt>測位モード</dt><dd id="an-mode" class="mono">—</dd></div>
         <div><dt>衛星 使用/視野内</dt><dd id="an-sats" class="mono">—</dd></div>
         <div><dt>精度ソース</dt><dd id="an-accsrc" class="mono">—</dd></div>
         <div><dt>GST σ(緯/経)</dt><dd id="an-gst" class="mono">—</dd></div>
       </dl>
-
-      <div class="sub-head">DRMS（記録データのばらつき）</div>
-      <canvas id="an-scatter" class="scatter-canvas"></canvas>
-      <div id="an-drms" class="result-box"></div>
     </section>
 
     <!-- 4. 地図 -->

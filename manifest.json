@@ -1,0 +1,26 @@
+{
+  "name": "GNSS Scope - GNSS受信・精度解析",
+  "short_name": "GNSS Scope",
+  "description": "Pico W + MAX-M10S から BLE で生NMEAを受信し、記録（record/stop/save/load）と精度解析（SkyPlot / SNR / DOP / DRMS）を行う PWA",
+  "lang": "ja",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

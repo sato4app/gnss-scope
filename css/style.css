@@ -1,0 +1,388 @@
+/* GNSS Scope — モバイル縦持ち前提のダークUI
+   構造: 上部ステータスバー（常設） / 中央ページ（タブで全画面切替） / 下部タブバー */
+:root {
+  --bg: #0b1220;
+  --panel: #111a2c;
+  --panel2: #18233a;
+  --border: #263753;
+  --text: #e7ecf5;
+  --muted: #8a93a3;
+  --good: #36c98d;
+  --warn: #f0a93a;
+  --bad: #ff5d5d;
+  --accent: #4f9dff;
+  /* コンステレーション色（js/nmea-parser.js の CONSTELLATION_COLORS と一致させること） */
+  --c-gps: #4f9dff;
+  --c-glonass: #ff5d5d;
+  --c-galileo: #36c98d;
+  --c-beidou: #f0a93a;
+  --c-qzss: #b07cff;
+  --c-mixed: #8a93a3;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 14px;
+  overscroll-behavior: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+
+/* ---- 上部ステータスバー ---- */
+#statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: max(6px, env(safe-area-inset-top)) 12px 6px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.conn-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: 0 0 auto;
+}
+.conn-dot[data-state="connected"], .conn-dot[data-state="receiving"] { background: var(--good); }
+.conn-dot[data-state="connecting"], .conn-dot[data-state="reconnecting"] { background: var(--warn); }
+.conn-dot[data-state="demo"] { background: var(--c-qzss); }
+.conn-dot[data-state="unsupported"] { background: var(--bad); }
+
+.conn-status { color: var(--muted); font-size: 12px; }
+.conn-status[data-state="connected"], .conn-status[data-state="receiving"] { color: var(--good); }
+.conn-status[data-state="connecting"], .conn-status[data-state="reconnecting"] { color: var(--warn); }
+.conn-status[data-state="demo"] { color: var(--c-qzss); }
+
+/* 記録中インジケータ */
+.rec-dot {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--bad);
+  animation: rec-blink 1.4s ease-in-out infinite;
+}
+.rec-dot[hidden] { display: none; }
+@keyframes rec-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.fix-badge {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--bad);
+}
+.fix-badge.ok { background: #2f6db8; }
+.fix-badge.good { background: var(--good); color: #06281a; }
+.fix-badge.warn { background: var(--warn); color: #2b1d02; }
+.fix-badge.bad { background: var(--bad); }
+
+.last-recv { font-size: 11px; color: var(--muted); min-width: 40px; text-align: right; }
+
+/* ---- ページ（タブ切替の全画面領域） ---- */
+#content {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+}
+
+.page {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px 24px;
+}
+.page.active { display: block; }
+
+/* 地図ページだけは余白なしの全面表示 */
+#page-map { padding: 0; overflow: hidden; }
+
+.btn {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn:disabled { opacity: 0.45; }
+
+.conn-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.conn-bar .btn { padding: 9px 16px; }
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin: 0;
+}
+.grid > div {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+.grid dt { font-size: 11px; color: var(--muted); }
+.grid dd { margin: 2px 0 0; font-size: 15px; }
+
+.sub-head {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+  border-left: 3px solid var(--accent);
+  padding-left: 6px;
+}
+
+.note {
+  background: #2b2410;
+  border: 1px solid #5c4d1d;
+  color: #f0d27a;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.note-dim { color: var(--muted); font-size: 12px; margin-top: 12px; }
+.note-inline { color: var(--muted); font-size: 11px; margin-left: auto; }
+
+.result-box {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-line;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+.result-box:empty { display: none; }
+
+/* ---- 記録 ---- */
+.rec-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+.rec-actions .btn { flex: 1; padding: 10px 8px; }
+
+.rec-form { display: flex; gap: 8px; margin-top: 10px; }
+.rec-form[hidden] { display: none; }
+.rec-form input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.scatter-canvas { width: min(86vw, 320px); height: min(86vw, 320px); display: block; margin: 0 auto; }
+
+.session-list { list-style: none; margin: 0; padding: 0; }
+.session-list li {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.session-list li.loaded { border-color: var(--accent); }
+.session-list .s-head { display: flex; align-items: center; gap: 8px; }
+.session-list .s-type {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--good);
+  color: #06281a;
+}
+.session-list .s-type.imported { background: var(--c-qzss); color: #fff; }
+.session-list .s-label { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-list .s-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.session-list .s-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.session-list .s-actions .btn { padding: 4px 9px; font-size: 12px; }
+
+/* ---- 解析 ---- */
+.src-switch {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+.src-switch label { display: flex; align-items: center; gap: 5px; }
+
+.epoch-box {
+  margin-top: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.epoch-box[hidden] { display: none; }
+.epoch-box input[type="range"] { width: 100%; accent-color: var(--accent); }
+.epoch-box .mono { font-size: 12px; color: var(--muted); text-align: center; }
+
+.sky-canvas { width: min(86vw, 340px); height: min(86vw, 340px); display: block; margin: 0 auto; }
+.snr-canvas { width: 100%; height: 170px; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; font-size: 11px; color: var(--muted); }
+.legend .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+
+.sys-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sys-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.sys-chip .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+.dop-rows { display: flex; flex-direction: column; gap: 6px; }
+.dop-row { display: flex; align-items: center; gap: 8px; }
+.dop-row > span { width: 44px; font-size: 12px; color: var(--muted); }
+.dop-row > b { width: 40px; text-align: right; font-size: 13px; }
+.bar {
+  flex: 1;
+  height: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--good);
+  transition: width 0.3s;
+}
+
+/* ---- 地図 ---- */
+#map {
+  position: absolute;
+  inset: 0;
+  background: #0a0f1a;
+  z-index: 0;
+}
+
+#map-ctrl {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  pointer-events: none;
+}
+.map-btn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  pointer-events: auto;
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.map-btn.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+.map-btn:disabled { opacity: 0.45; }
+
+.map-info {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  right: 96px;
+  pointer-events: none;
+  background: rgba(17, 26, 44, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 設定 ---- */
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.set-row input[type="number"] {
+  width: 90px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 8px;
+  text-align: right;
+}
+.radio-group { display: flex; gap: 10px; }
+.radio-group label { display: flex; align-items: center; gap: 4px; }
+
+.tile-status { font-size: 12px; color: var(--text); margin: 6px 0 2px; }
+.tiledl-progress { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
+
+/* ---- 下部タブバー ---- */
+#tabbar {
+  display: flex;
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 1100;
+}
+.tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 12px 0 10px;
+  font-size: 13px;
+  border-top: 2px solid transparent;
+  cursor: pointer;
+}
+.tab.active { color: #fff; border-top-color: var(--accent); background: var(--panel2); }
+
+/* Leaflet ダーク調整 */
+.leaflet-container { font: inherit; }
+.leaflet-control-attribution {
+  background: rgba(11, 18, 32, 0.7) !important;
+  color: var(--muted) !important;
+  font-size: 10px;
+}
+.leaflet-control-attribution a { color: var(--accent) !important; }

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <title>GNSS Scope</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 常設ステータスバー（どのタブでも接続・測位状態が分かるように） -->
+  <header id="statusbar">
+    <span id="conn-dot" class="conn-dot" data-state="disconnected"></span>
+    <span id="conn-status" class="conn-status" data-state="disconnected">未接続</span>
+    <span id="rec-dot" class="rec-dot" hidden>● REC</span>
+    <span id="fix-badge" class="fix-badge bad">No fix</span>
+    <span id="last-recv" class="last-recv mono">—</span>
+  </header>
+
+  <main id="content">
+
+    <!-- 1. 接続 -->
+    <section class="page" id="page-connect">
+      <div class="conn-bar">
+        <button id="btn-connect" class="btn primary">接続</button>
+        <button id="btn-disconnect" class="btn" disabled>切断</button>
+      </div>
+      <dl class="grid">
+        <div><dt>接続状態</dt><dd id="cn-state">未接続</dd></div>
+        <div><dt>デバイス</dt><dd id="cn-device" class="mono">—</dd></div>
+      </dl>
+
+      <div class="sub-head">受信品質（接続/リセットからの累計）</div>
+      <dl class="grid">
+        <div><dt>受信行数 / CS NG</dt><dd id="rx-lines" class="mono">0 / 0</dd></div>
+        <div><dt>未対応文 / 破棄文字</dt><dd id="rx-unknown" class="mono">0 / 0</dd></div>
+        <div><dt>エポック / 欠落</dt><dd id="rx-epochs" class="mono">0 / 0</dd></div>
+        <div><dt>GSV部分欠落</dt><dd id="rx-gsv" class="mono">0</dd></div>
+        <div><dt>BLE欠落（推定）</dt><dd id="rx-ble" class="mono">—</dd></div>
+        <div><dt>Pico統計 $PPICO</dt><dd id="rx-ppico" class="mono">未受信</dd></div>
+        <div><dt>Pico UART受信 / NG</dt><dd id="rx-pico-uart" class="mono">—</dd></div>
+        <div><dt>Pico破棄 バッファ/BLE</dt><dd id="rx-pico-drop" class="mono">—</dd></div>
+      </dl>
+      <div class="conn-bar" style="margin-top: 10px">
+        <button id="btn-rxstats-reset" class="btn">統計リセット</button>
+      </div>
+      <div class="note-dim">チェックサムNG行・未対応センテンスは件数を記録して破棄します。「BLE欠落（推定）」は Pico の送信数（$PPICO）とアプリの受信行数の差です。</div>
+      <div class="note-dim">BLE（Bluetooth）で GNSS レシーバへ接続します。実機がない場合は「設定」タブの「モックNMEA配信」をご利用ください。</div>
+    </section>
+
+    <!-- 2. 記録 -->
+    <section class="page" id="page-record">
+      <div class="note">⚠ 記録は画面表示中のみ有効です（画面OFF/バックグラウンドでBLEが切断され、記録は一時停止します）</div>
+      <div class="rec-actions">
+        <button id="btn-record" class="btn primary">⏺ 記録</button>
+        <button id="btn-stop" class="btn" disabled>⏹ 停止</button>
+        <button id="btn-save" class="btn" disabled>💾 保存</button>
+      </div>
+
+      <div class="sub-head">現在の測位値</div>
+      <dl class="grid">
+        <div><dt>緯度</dt><dd id="rc-lat" class="mono">—</dd></div>
+        <div><dt>経度</dt><dd id="rc-lon" class="mono">—</dd></div>
+        <div><dt>標高(MSL)</dt><dd id="rc-alt" class="mono">—</dd></div>
+        <div><dt>推定水平精度</dt><dd id="rc-acc" class="mono">—</dd></div>
+        <div><dt>衛星 使用/視野内</dt><dd id="rc-sats" class="mono">—</dd></div>
+        <div><dt>HDOP</dt><dd id="rc-hdop" class="mono">—</dd></div>
+      </dl>
+
+      <div id="rec-live" class="rec-live" hidden>
+        <div class="sub-head">収集状況</div>
+        <dl class="grid">
+          <div><dt>収集点数</dt><dd id="rc-count" class="mono">0</dd></div>
+          <div><dt>経過時間</dt><dd id="rc-elapsed" class="mono">0 s</dd></div>
+          <div><dt>DRMS(暫定)</dt><dd id="rc-drms" class="mono">—</dd></div>
+          <div><dt>CEP50(暫定)</dt><dd id="rc-cep" class="mono">—</dd></div>
+          <div><dt>収束判定</dt><dd id="rc-conv" class="mono">—</dd></div>
+        </dl>
+      </div>
+
+      <div class="sub-head">散布図（中心からの東西×南北オフセット）</div>
+      <canvas id="rec-scatter" class="scatter-canvas"></canvas>
+      <div id="rec-result" class="result-box"></div>
+
+      <div id="save-form" class="rec-form" hidden>
+        <input id="rec-label" type="text" placeholder="地点名">
+        <input id="rec-memo" type="text" placeholder="メモ（任意）">
+      </div>
+
+      <div class="sub-head">記録一覧（保存済み）</div>
+      <div class="conn-bar">
+        <button id="btn-import" class="btn">📂 JSON取込</button>
+        <input id="file-import" type="file" accept="application/json,.json" hidden>
+      </div>
+      <ul id="session-list" class="session-list"></ul>
+    </section>
+
+    <!-- 3. 解析 -->
+    <section class="page" id="page-analysis">
+      <div class="src-switch">
+        <label><input type="radio" name="ansrc" value="live" checked>ライブ</label>
+        <label><input type="radio" name="ansrc" value="loaded">読込データ</label>
+        <span id="an-src-note" class="note-inline">—</span>
+      </div>
+
+      <div id="an-epoch-box" class="epoch-box" hidden>
+        <input id="an-epoch" type="range" min="0" max="0" value="0">
+        <div id="an-epoch-label" class="mono">—</div>
+      </div>
+
+      <div class="sub-head">スカイプロット（半径=仰角 / 角度=方位 / 大きさ=SNR / 塗り=使用中）</div>
+      <canvas id="sky-plot" class="sky-canvas"></canvas>
+      <div id="legend" class="legend"></div>
+
+      <div class="sub-head">SNR（C/N0）チャート</div>
+      <canvas id="snr-chart" class="snr-canvas"></canvas>
+      <div id="an-sys" class="sys-chips">—</div>
+
+      <div class="sub-head">DOP</div>
+      <div class="dop-rows">
+        <div class="dop-row"><span>PDOP</span><div class="bar"><i id="bar-pdop"></i></div><b id="an-pdop" class="mono">—</b></div>
+        <div class="dop-row"><span>HDOP</span><div class="bar"><i id="bar-hdop"></i></div><b id="an-hdop" class="mono">—</b></div>
+        <div class="dop-row"><span>VDOP</span><div class="bar"><i id="bar-vdop"></i></div><b id="an-vdop" class="mono">—</b></div>
+      </div>
+      <dl class="grid" style="margin-top: 8px">
+        <div><dt>測位モード</dt><dd id="an-mode" class="mono">—</dd></div>
+        <div><dt>衛星 使用/視野内</dt><dd id="an-sats" class="mono">—</dd></div>
+        <div><dt>精度ソース</dt><dd id="an-accsrc" class="mono">—</dd></div>
+        <div><dt>GST σ(緯/経)</dt><dd id="an-gst" class="mono">—</dd></div>
+      </dl>
+
+      <div class="sub-head">DRMS（記録データのばらつき）</div>
+      <canvas id="an-scatter" class="scatter-canvas"></canvas>
+      <div id="an-drms" class="result-box"></div>
+    </section>
+
+    <!-- 4. 地図 -->
+    <section class="page" id="page-map">
+      <div id="map"></div>
+      <div id="map-ctrl">
+        <div id="map-info" class="map-info">読込データなし</div>
+        <button id="btn-fit-loaded" class="map-btn" style="bottom: 52px">読込データへ</button>
+        <button id="btn-follow" class="map-btn active">追従</button>
+      </div>
+    </section>
+
+    <!-- 5. 設定 -->
+    <section class="page" id="page-settings">
+      <div class="sub-head">測位・記録</div>
+      <label class="set-row">UERE（HDOP×UERE 概算用）[m]
+        <input id="set-uere" type="number" min="1" max="30" step="0.5">
+      </label>
+      <label class="set-row">収束で自動停止（中心・DRMSが10秒横ばい）
+        <input id="set-autostop" type="checkbox">
+      </label>
+      <label class="set-row">記録 最低収集時間 [秒]
+        <input id="set-minsec" type="number" min="0" step="5">
+      </label>
+      <label class="set-row">記録 上限時間 [秒]（0=無制限・タイムアウト）
+        <input id="set-maxsec" type="number" min="0" step="10">
+      </label>
+      <div class="note-dim">未収束の環境では上限時間で停止します（0 だと収束するまで停止しません）。収束に余裕を見る場合は 300 秒など大きめに設定できます。</div>
+      <label class="set-row">記録 収集エポック数（0=無制限）
+        <input id="set-maxepochs" type="number" min="0" step="10">
+      </label>
+
+      <div class="sub-head">地図</div>
+      <div class="set-row">地図種別
+        <span class="radio-group">
+          <label><input type="radio" name="maptype" value="std">標準</label>
+          <label><input type="radio" name="maptype" value="pale">淡色</label>
+          <label><input type="radio" name="maptype" value="photo">写真</label>
+        </span>
+      </div>
+      <label class="set-row">ライブ軌跡を表示
+        <input id="set-track" type="checkbox">
+      </label>
+
+      <div class="sub-head">オフライン地図タイル（data/tile_manifest.json）</div>
+      <div class="set-row">
+        <button id="btn-tiledl" class="btn">タイル事前ダウンロード</button>
+        <button id="btn-tiledl-cancel" class="btn" hidden>中止</button>
+      </div>
+      <div id="tile-status" class="tile-status">ダウンロード済みタイル: なし</div>
+      <div id="tiledl-progress" class="tiledl-progress"></div>
+
+      <div class="sub-head">アプリのバージョン（Service Worker キャッシュ）</div>
+      <dl class="grid">
+        <div><dt>現行（動作中）</dt><dd id="info-sw-current" class="mono">—</dd></div>
+        <div><dt>最新（サーバー）</dt><dd id="info-sw-latest" class="mono">—</dd></div>
+      </dl>
+      <div id="info-update-state" class="note-dim"></div>
+      <div class="conn-bar" style="margin-top: 10px">
+        <button id="btn-update-check" class="btn">更新を確認</button>
+        <button id="btn-update-apply" class="btn primary" hidden>アプリを更新</button>
+      </div>
+
+      <div class="sub-head">開発</div>
+      <label class="set-row">モックNMEA配信（実機なしで動作確認）
+        <input id="set-mock" type="checkbox">
+      </label>
+      <div id="wakelock-state" class="note-dim">Wake Lock: —</div>
+    </section>
+
+  </main>
+
+  <!-- 下部タブバー -->
+  <nav id="tabbar">
+    <button class="tab" data-page="connect">接続</button>
+    <button class="tab" data-page="record">記録</button>
+    <button class="tab" data-page="analysis">解析</button>
+    <button class="tab" data-page="map">地図</button>
+    <button class="tab" data-page="settings">設定</button>
+  </nav>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

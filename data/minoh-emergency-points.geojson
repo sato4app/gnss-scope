@@ -1,0 +1,3013 @@
+{
+  "type": "FeatureCollection",
+  "updated": "2025-10-27",
+  "count": 167,
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-01",
+        "name": "聖天展望台",
+        "pointId": "B-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47258,
+          34.839,
+          184.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-02",
+        "name": "風の杜",
+        "pointId": "B-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47454,
+          34.84046,
+          256.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-03",
+        "name": "地獄谷口",
+        "pointId": "B-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47626,
+          34.84785,
+          250.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-04",
+        "name": "風呂谷口",
+        "pointId": "B-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47633,
+          34.85043,
+          244.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-05",
+        "name": "雲隣展望台口",
+        "pointId": "B-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47347,
+          34.85442,
+          247.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-06",
+        "name": "百年橋",
+        "pointId": "B-06",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47175,
+          34.85643,
+          235.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-07",
+        "name": "ビジターセンタ",
+        "pointId": "B-07",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4788,
+          34.85839,
+          288.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-08",
+        "name": "雲隣展望台",
+        "pointId": "B-08",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47532,
+          34.8529,
+          349.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-09",
+        "name": "こもれびの森",
+        "pointId": "B-09",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47792,
+          34.85413,
+          354.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-10",
+        "name": "こもれび展望所",
+        "pointId": "B-10",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47995,
+          34.85544,
+          374.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-11",
+        "name": "才ヶ原口",
+        "pointId": "B-11",
+        "description": "B12～20欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4794,
+          34.8485,
+          295.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-21",
+        "name": "高山道口",
+        "pointId": "B-21",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47309,
+          34.83917,
+          192.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-22",
+        "name": "才ヶ原林道分岐",
+        "pointId": "B-22",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48022,
+          34.85061,
+          316.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-23",
+        "name": "こもれびの森",
+        "pointId": "B-23",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4802,
+          34.85169,
+          357
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-24",
+        "name": "こもれびの森",
+        "pointId": "B-24",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48007,
+          34.85417,
+          391.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-25",
+        "name": "ばばたれ坂上",
+        "pointId": "B-25",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48032,
+          34.85523,
+          363.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-26",
+        "name": "ばばたれ坂下",
+        "pointId": "B-26",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47932,
+          34.85738,
+          283.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-27",
+        "name": "雲隣展望台分岐",
+        "pointId": "B-27",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47574,
+          34.85421,
+          349
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-28",
+        "name": "地獄谷口",
+        "pointId": "B-28",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47657,
+          34.84736,
+          241.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-29",
+        "name": "才が原池",
+        "pointId": "B-29",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48049,
+          34.84903,
+          285.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-30",
+        "name": "才が原池",
+        "pointId": "B-30",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48091,
+          34.84738,
+          282.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-31",
+        "name": "三ツ石",
+        "pointId": "B-31",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48143,
+          34.84611,
+          300.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-32",
+        "name": "三ツ石西",
+        "pointId": "B-32",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48042,
+          34.8449,
+          303.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-33",
+        "name": "望海展望台分岐",
+        "pointId": "B-33",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47599,
+          34.84496,
+          253
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-34",
+        "name": "箕面川ダム",
+        "pointId": "B-34",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47702,
+          34.85949,
+          336.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-35",
+        "name": "自然研究路3号",
+        "pointId": "B-35",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47576,
+          34.85889,
+          353.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-36",
+        "name": "才ヶ原林道分岐",
+        "pointId": "B-36",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48185,
+          34.85178,
+          344.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-37",
+        "name": "風呂谷",
+        "pointId": "B-37",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47732,
+          34.85177,
+          280.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-38",
+        "name": "風呂谷上",
+        "pointId": "B-38",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48075,
+          34.85369,
+          380.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-39",
+        "name": "極楽谷分岐",
+        "pointId": "B-39",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47963,
+          34.85181,
+          339.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-40",
+        "name": "極楽谷",
+        "pointId": "B-40",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47819,
+          34.84931,
+          279
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "B-41",
+        "name": "極楽谷",
+        "pointId": "B-41",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47635,
+          34.84852,
+          254.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-01",
+        "name": "勝尾寺参道分岐",
+        "pointId": "C-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49939,
+          34.84988,
+          205.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-02",
+        "name": "ウツギ谷上池",
+        "pointId": "C-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49547,
+          34.85638,
+          290.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-03",
+        "name": "勝尾寺山門",
+        "pointId": "C-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49334,
+          34.86425,
+          357.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-04",
+        "name": "勝尾寺　車道",
+        "pointId": "C-04",
+        "description": "C5～10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48617,
+          34.85992,
+          311.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-11",
+        "name": "勝尾寺参道入口",
+        "pointId": "C-11",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.50274,
+          34.84427,
+          117.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-12",
+        "name": "谷山尾根",
+        "pointId": "C-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49959,
+          34.84635,
+          143.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-13",
+        "name": "谷山尾根",
+        "pointId": "C-13",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49647,
+          34.85005,
+          266.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-14",
+        "name": "勝尾寺参道",
+        "pointId": "C-14",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49502,
+          34.85333,
+          323.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-15",
+        "name": "勝尾寺参道",
+        "pointId": "C-15",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49513,
+          34.85476,
+          316.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-16",
+        "name": "ウツギ谷上池",
+        "pointId": "C-16",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49527,
+          34.85567,
+          308.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-17",
+        "name": "勝尾寺参道",
+        "pointId": "C-17",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49376,
+          34.85945,
+          348
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-18",
+        "name": "勝尾寺参道",
+        "pointId": "C-18",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49442,
+          34.86205,
+          417.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-19",
+        "name": "しらみ地蔵",
+        "pointId": "C-19",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49259,
+          34.85975,
+          346.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-20",
+        "name": "勝尾寺　車道",
+        "pointId": "C-20",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48653,
+          34.86087,
+          314.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-21",
+        "name": "南山分岐",
+        "pointId": "C-21",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48711,
+          34.85934,
+          318
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-22",
+        "name": "ウツキ谷",
+        "pointId": "C-22",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49762,
+          34.84694,
+          150.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-23",
+        "name": "青松園北",
+        "pointId": "C-23",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49648,
+          34.84472,
+          148.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "C-24",
+        "name": "勝尾寺山門南",
+        "pointId": "C-24",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49396,
+          34.86264,
+          409.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-01",
+        "name": "教学の森事務所下",
+        "pointId": "D-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4564,
+          34.83791,
+          242
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-02",
+        "name": "ハート広場",
+        "pointId": "D-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46116,
+          34.84367,
+          333.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-03",
+        "name": "憩いの丘",
+        "pointId": "D-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4615,
+          34.83905,
+          223.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-04",
+        "name": "望海の丘",
+        "pointId": "D-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46494,
+          34.84184,
+          319.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-05",
+        "name": "桜谷分岐",
+        "pointId": "D-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46649,
+          34.84536,
+          339
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-06",
+        "name": "桜広場",
+        "pointId": "D-06",
+        "description": "D7～10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47011,
+          34.84153,
+          168.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-11",
+        "name": "平和台北口",
+        "pointId": "D-11",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46248,
+          34.83746,
+          146.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-12",
+        "name": "平和台西口",
+        "pointId": "D-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46341,
+          34.83903,
+          154.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-13",
+        "name": "平和台北口北",
+        "pointId": "D-13",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.463,
+          34.8396,
+          171
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-14",
+        "name": "東尾根道",
+        "pointId": "D-14",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45934,
+          34.8381,
+          204.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-15",
+        "name": "東尾根道",
+        "pointId": "D-15",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45934,
+          34.8392,
+          248.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-16",
+        "name": "東尾根道",
+        "pointId": "D-16",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45871,
+          34.83969,
+          269
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-17",
+        "name": "教学の森",
+        "pointId": "D-17",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45801,
+          34.84127,
+          313.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-18",
+        "name": "六個山分岐",
+        "pointId": "D-18",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45704,
+          34.84078,
+          312.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-20",
+        "name": "わくわく展望台下",
+        "pointId": "D-20",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45978,
+          34.84134,
+          304.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-21",
+        "name": "わくわく展望台",
+        "pointId": "D-21",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46012,
+          34.84174,
+          324.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-22",
+        "name": "箕面ゴルフ",
+        "pointId": "D-22",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46003,
+          34.84242,
+          339.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-23",
+        "name": "六個山分岐",
+        "pointId": "D-23",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45891,
+          34.84211,
+          340.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-24",
+        "name": "教学の森",
+        "pointId": "D-24",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46246,
+          34.84072,
+          234.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-25",
+        "name": "西尾根",
+        "pointId": "D-25",
+        "description": "D26～30欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45643,
+          34.84099,
+          307
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-31",
+        "name": "西尾根",
+        "pointId": "D-31",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45535,
+          34.84196,
+          350.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-32",
+        "name": "六個山",
+        "pointId": "D-32",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45542,
+          34.84292,
+          371.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-33",
+        "name": "石澄川上流",
+        "pointId": "D-33",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45449,
+          34.84361,
+          329.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-34",
+        "name": "池田GC",
+        "pointId": "D-34",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45278,
+          34.84392,
+          346.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-35",
+        "name": "箕面ゴルフ",
+        "pointId": "D-35",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45955,
+          34.84491,
+          364.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-36",
+        "name": "ハート広場北",
+        "pointId": "D-36",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46056,
+          34.84543,
+          355.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-37",
+        "name": "望海の丘西",
+        "pointId": "D-37",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46453,
+          34.84212,
+          309.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-38",
+        "name": "山の神口",
+        "pointId": "D-38",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47018,
+          34.84225,
+          178.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-39",
+        "name": "桜広場展望台",
+        "pointId": "D-39",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47059,
+          34.84082,
+          172.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-40",
+        "name": "西尾根入口",
+        "pointId": "D-40",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45531,
+          34.8357,
+          177
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-41",
+        "name": "ささゆりコース",
+        "pointId": "D-41",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46523,
+          34.84498,
+          343.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-42",
+        "name": "望海の丘北",
+        "pointId": "D-42",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4653,
+          34.84354,
+          323.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-43",
+        "name": "桜谷",
+        "pointId": "D-43",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46661,
+          34.84448,
+          302.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-44",
+        "name": "桜谷",
+        "pointId": "D-44",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46729,
+          34.844,
+          278.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "D-45",
+        "name": "平和台分岐",
+        "pointId": "D-45",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4612,
+          34.83786,
+          203.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-01",
+        "name": "落合谷口",
+        "pointId": "E-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47101,
+          34.84558,
+          153.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-02",
+        "name": "落合谷分岐",
+        "pointId": "E-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46263,
+          34.85224,
+          400.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-03",
+        "name": "大ケヤキ",
+        "pointId": "E-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46385,
+          34.85386,
+          409
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-04",
+        "name": "ようらく台",
+        "pointId": "E-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45957,
+          34.85735,
+          467.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-05",
+        "name": "三国峠",
+        "pointId": "E-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46847,
+          34.85325,
+          389.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-06",
+        "name": "東海自然歩道",
+        "pointId": "E-06",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46145,
+          34.86379,
+          485.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-07",
+        "name": "天井岳分岐",
+        "pointId": "E-07",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46816,
+          34.86421,
+          511.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-08",
+        "name": "自然研究路2，3号",
+        "pointId": "E-08",
+        "description": "E9～10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47347,
+          34.85993,
+          393
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-11",
+        "name": "大滝眺望",
+        "pointId": "E-11",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4694,
+          34.85036,
+          332.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-12",
+        "name": "落合谷",
+        "pointId": "E-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47085,
+          34.84575,
+          158.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-13",
+        "name": "落合谷",
+        "pointId": "E-13",
+        "description": "E14,16欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46233,
+          34.84855,
+          332.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-15",
+        "name": "落合谷分岐",
+        "pointId": "E-15",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45965,
+          34.84907,
+          372.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-17",
+        "name": "落合谷分岐",
+        "pointId": "E-17",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46189,
+          34.85123,
+          390.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-18",
+        "name": "カメラ通",
+        "pointId": "E-18",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46868,
+          34.84913,
+          274.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-19",
+        "name": "ようらく台分岐",
+        "pointId": "E-19",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46481,
+          34.85445,
+          454.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-20",
+        "name": "落合谷分岐",
+        "pointId": "E-20",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46528,
+          34.85439,
+          445.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-21",
+        "name": "ようらく台",
+        "pointId": "E-21",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.45864,
+          34.85783,
+          449.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "E-22",
+        "name": "止々呂美分岐",
+        "pointId": "E-22",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46031,
+          34.86315,
+          459.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-01",
+        "name": "ダム林道",
+        "pointId": "F-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47427,
+          34.86372,
+          355.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-02",
+        "name": "ダム林道",
+        "pointId": "F-02",
+        "description": "×位置不明"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47698,
+          34.8642,
+          343.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-03",
+        "name": "ダム林道",
+        "pointId": "F-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47839,
+          34.86879,
+          335.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-04",
+        "name": "清水谷",
+        "pointId": "F-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48532,
+          34.86866,
+          388.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-05",
+        "name": "東海自然歩道",
+        "pointId": "F-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49181,
+          34.86803,
+          499.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-06",
+        "name": "東海自然歩道",
+        "pointId": "F-06",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48257,
+          34.86583,
+          480.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-07",
+        "name": "自然研究路4号",
+        "pointId": "F-07",
+        "description": "F8～10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48436,
+          34.86216,
+          379.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-11",
+        "name": "清水谷",
+        "pointId": "F-11",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49179,
+          34.86884,
+          471.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-12",
+        "name": "清水谷園地",
+        "pointId": "F-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47988,
+          34.8679,
+          345
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-13",
+        "name": "東海自然歩道",
+        "pointId": "F-13",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48585,
+          34.86664,
+          475.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-14",
+        "name": "東海自然歩道",
+        "pointId": "F-14",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4806,
+          34.86057,
+          375.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "F-15",
+        "name": "勝尾寺　車道",
+        "pointId": "F-15",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48627,
+          34.86121,
+          321.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-01",
+        "name": "医王岩",
+        "pointId": "G-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48627,
+          34.84215,
+          147.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-02",
+        "name": "22曲がり　北",
+        "pointId": "G-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48577,
+          34.84866,
+          301.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-03",
+        "name": "南山分岐",
+        "pointId": "G-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49142,
+          34.85708,
+          343.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-04",
+        "name": "ウツギ谷池",
+        "pointId": "G-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49334,
+          34.85427,
+          259.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-05",
+        "name": "谷山尾根分岐",
+        "pointId": "G-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49201,
+          34.84933,
+          284.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-06",
+        "name": "白姫神社",
+        "pointId": "G-06",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49177,
+          34.84244,
+          136.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-07",
+        "name": "谷山谷",
+        "pointId": "G-07",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48813,
+          34.84837,
+          195.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-08",
+        "name": "谷山谷",
+        "pointId": "G-08",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48631,
+          34.85173,
+          262
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-09",
+        "name": "南山分岐",
+        "pointId": "G-09",
+        "description": "G10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48587,
+          34.85498,
+          327
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-11",
+        "name": "大宮寺森",
+        "pointId": "G-11",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48617,
+          34.84035,
+          129.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-12",
+        "name": "22曲がり",
+        "pointId": "G-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48655,
+          34.84485,
+          189.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-13",
+        "name": "22曲がり",
+        "pointId": "G-13",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48669,
+          34.84587,
+          204.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-14",
+        "name": "22曲がり",
+        "pointId": "G-14",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4861,
+          34.84785,
+          289.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-15",
+        "name": "才ヶ原東",
+        "pointId": "G-15",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48544,
+          34.84906,
+          313.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-16",
+        "name": "才ヶ原東",
+        "pointId": "G-16",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4837,
+          34.85003,
+          300.1
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-17",
+        "name": "才ヶ原東",
+        "pointId": "G-17",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48451,
+          34.85069,
+          282.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-18",
+        "name": "谷山谷",
+        "pointId": "G-18",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4861,
+          34.85266,
+          274.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-19",
+        "name": "谷山谷",
+        "pointId": "G-19",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48533,
+          34.85471,
+          301.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-20",
+        "name": "南山分岐",
+        "pointId": "G-20",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4912,
+          34.85725,
+          345.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-21",
+        "name": "南山分岐",
+        "pointId": "G-21",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49252,
+          34.85774,
+          342.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-22",
+        "name": "南山分岐",
+        "pointId": "G-22",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49147,
+          34.85803,
+          375.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-23",
+        "name": "南山頂上",
+        "pointId": "G-23",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49097,
+          34.85848,
+          394.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-24",
+        "name": "白島愛宕社口",
+        "pointId": "G-24",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48981,
+          34.84069,
+          138.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-25",
+        "name": "あかつき園北",
+        "pointId": "G-25",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48932,
+          34.84172,
+          158.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-26",
+        "name": "白島愛宕社",
+        "pointId": "G-26",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48843,
+          34.84469,
+          254.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-27",
+        "name": "白島愛宕社道",
+        "pointId": "G-27",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48868,
+          34.84546,
+          268.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-28",
+        "name": "谷山尾根",
+        "pointId": "G-28",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49289,
+          34.84396,
+          183.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-29",
+        "name": "谷山尾根",
+        "pointId": "G-29",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49185,
+          34.85125,
+          302.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "G-30",
+        "name": "勝尾寺　車道",
+        "pointId": "G-30",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48248,
+          34.85825,
+          295.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-01",
+        "name": "エキスポの森入口",
+        "pointId": "H-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47116,
+          34.86932,
+          450.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-02",
+        "name": "エキスポの森　中",
+        "pointId": "H-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46992,
+          34.8711,
+          484.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-03",
+        "name": "エキスポの森入口",
+        "pointId": "H-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.46815,
+          34.86947,
+          492.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-04",
+        "name": "鉢伏山道",
+        "pointId": "H-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4713,
+          34.87451,
+          534
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-05",
+        "name": "鉢伏山",
+        "pointId": "H-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47511,
+          34.87642,
+          596
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-06",
+        "name": "梅ケ谷",
+        "pointId": "H-06",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47914,
+          34.88048,
+          498.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-07",
+        "name": "梅ケ谷口",
+        "pointId": "H-07",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.48038,
+          34.87343,
+          358.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-08",
+        "name": "高山車道",
+        "pointId": "H-08",
+        "description": "H9.10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47895,
+          34.86955,
+          339.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-11",
+        "name": "＃32鉄塔",
+        "pointId": "H-11",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47341,
+          34.86829,
+          552.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-12",
+        "name": "鉢伏山",
+        "pointId": "H-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47457,
+          34.87641,
+          598.4
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-13",
+        "name": "鉢伏山山頂",
+        "pointId": "H-13",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47403,
+          34.87644,
+          581.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-14",
+        "name": "鉢伏山",
+        "pointId": "H-14",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47629,
+          34.87671,
+          576.5
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-15",
+        "name": "鉢伏山道",
+        "pointId": "H-15",
+        "description": "H16欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47682,
+          34.87892,
+          592.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "H-17",
+        "name": "梅ケ谷",
+        "pointId": "H-17",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.47932,
+          34.87705,
+          451.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-01",
+        "name": "勝尾寺園地",
+        "pointId": "J-01",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49666,
+          34.86653,
+          354.9
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-02",
+        "name": "クリーンセンタ分岐",
+        "pointId": "J-02",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49815,
+          34.86945,
+          355.3
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-03",
+        "name": "＃24鉄塔",
+        "pointId": "J-03",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49686,
+          34.8726,
+          487.6
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-04",
+        "name": "北摂霊園",
+        "pointId": "J-04",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49457,
+          34.87521,
+          580.2
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-05",
+        "name": "東海自然歩道",
+        "pointId": "J-05",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49331,
+          34.87202,
+          564.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-06",
+        "name": "東海自然歩道",
+        "pointId": "J-06",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49368,
+          34.87061,
+          546.8
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-11",
+        "name": "林道止まり",
+        "pointId": "J-11",
+        "description": "J7～10欠番"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.4977,
+          34.86787,
+          343.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-12",
+        "name": "北摂霊園",
+        "pointId": "J-12",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49387,
+          34.87405,
+          592.7
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "type": "ポイントGPS",
+        "id": "J-13",
+        "name": "東海自然歩道",
+        "pointId": "J-13",
+        "description": null
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          135.49335,
+          34.87167,
+          561.2
+        ]
+      }
+    }
+  ]
+}

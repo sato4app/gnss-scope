@@ -38,11 +38,12 @@ try {
 
 // ---- 純粋ロジックの簡易テスト ----
 const { parseSentence, validateChecksum, LineBuffer } = await import(pathToFileURL(resolve(jsDir, 'nmea.js')).href);
-const { computeStaticStats, estimateHorizontalAccuracy, metersPerDegree, evaluateConvergence } = await import(
-  pathToFileURL(resolve(jsDir, 'accuracy.js')).href
-);
+const { computeStaticStats, computeDeviceStats, offsetBetween, estimateHorizontalAccuracy, metersPerDegree, evaluateConvergence } =
+  await import(pathToFileURL(resolve(jsDir, 'accuracy.js')).href);
 const { holdDecision } = await import(pathToFileURL(resolve(jsDir, 'charts.js')).href);
-const { nextPointLabel, formatStats } = await import(pathToFileURL(resolve(jsDir, 'view-utils.js')).href);
+const { nextPointLabel, formatStats, formatCompare, bearingText } = await import(
+  pathToFileURL(resolve(jsDir, 'view-utils.js')).href
+);
 const { Recorder } = await import(pathToFileURL(resolve(jsDir, 'recorder.js')).href);
 const { EpochAssembler } = await import(pathToFileURL(resolve(jsDir, 'epoch.js')).href);
 const { StreamStats, diffRxStats } = await import(pathToFileURL(resolve(jsDir, 'stream-stats.js')).href);
@@ -248,6 +249,61 @@ assert(savedDb.sessions.length === 1 && entry.session.type === 'record', '記録
 assert(savedDb.points[0].kind === 'record' && savedDb.points[0].samples.length === 10, '記録: save で生エポックを保存');
 assert(entry.session.summary.count === 10 && entry.session.summary.drms >= 0, '記録: summary に集計値を残す');
 assert(entry.session.label === 'テスト地点' && entry.session.memo === 'メモ', '記録: 地点名・メモは save 時に付与');
+
+// ---- 端末内蔵GNSS の並行取得と比較（仕様 4-8 / 5-4） ----
+
+// 中心どうしのズレ（東西/南北・距離・方位）
+const { latM } = metersPerDegree(34.85);
+const off = offsetBetween({ lat: 34.85, lon: 135.47 }, { lat: 34.85 + 10 / latM, lon: 135.47 });
+assert(Math.abs(off.distM - 10) < 1e-6 && Math.abs(off.bearingDeg) < 1e-6, 'offsetBetween: 真北 10 m');
+assert(bearingText(off.bearingDeg) === '北' && bearingText(45) === '北東', '方位の日本語表記');
+
+// 端末内蔵GNSS の集計：座標重複の計数・平均 accuracy・基準中心からのズレ
+const devSamples = [
+  { t: 1, lat: 34.8536, lon: 135.472, accuracy: 5 },
+  { t: 2, lat: 34.8536, lon: 135.472, accuracy: 5 }, // 直前と同一座標（OSの間引き）
+  { t: 3, lat: 34.85362, lon: 135.47202, accuracy: 3 },
+];
+const devStats = computeDeviceStats(devSamples, { lat: 34.8536, lon: 135.472 });
+assert(devStats.count === 3 && devStats.dupCount === 1, '内蔵GNSS集計: 点数と座標重複');
+assert(Math.abs(devStats.avgAccuracy - 13 / 3) < 1e-9, '内蔵GNSS集計: 平均accuracy');
+assert(devStats.offsetFromRef.distM > 0, '内蔵GNSS集計: 基準中心からのズレ');
+assert(computeDeviceStats([], { lat: 34.8536, lon: 135.472 }) === null, '内蔵GNSS集計: 0件は null');
+
+// 比較テキスト（重複が多いと過小評価の注意を出す）
+const cmpText = formatCompare(snrStats, devStats);
+assert(cmpText.includes('比較: 端末内蔵GNSS') && cmpText.includes('中心のズレ'), '比較テキスト: 主要行');
+assert(cmpText.includes('過小評価'), '比較テキスト: 座標重複が多いと注意を出す');
+assert(formatCompare(snrStats, null) === '', '比較テキスト: 比較データなしは空');
+
+// 記録フロー：並行取得ありの record → stop → save
+const fakeDevice = { started: 0, stopped: 0, status: 'watching', start() { this.started++; }, stop() { this.stopped++; }, setPaused() {} };
+const rec2 = new Recorder(fakeStorage, { deviceGnss: fakeDevice });
+rec2.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0, withDevice: true });
+assert(fakeDevice.started === 1, '記録: withDevice で内蔵GNSSの取得を開始する');
+rec2.addDeviceSample({ t: 1, lat: 34.8536, lon: 135.472, accuracy: 4 });
+rec2.addDeviceSample({ t: 2, lat: 34.85361, lon: 135.47201, accuracy: 4 });
+for (let i = 0; i < 3; i++) {
+  rec2.addEpoch({ t: new Date(), recvAt: Date.now(), lat: 34.8536 + i * 1e-6, lon: 135.472, fixQuality: 1, fixMode: 3, satsUsed: 10 });
+}
+const pending2 = rec2.stop('manual');
+assert(fakeDevice.stopped === 1, '記録: stop で内蔵GNSSの取得を止める');
+assert(pending2.deviceStats.count === 2 && pending2.deviceSamples.length === 2, '記録: 内蔵GNSSを同区間で集計する');
+assert(pending2.deviceStats.offsetFromRef != null, '記録: 内蔵GNSSの中心ズレは M10S 中心を基準にする');
+
+const entry2 = await rec2.save(pending2, { label: '比較テスト' });
+assert(entry2.point.deviceSamples.length === 2 && entry2.point.deviceStats != null, '記録: save で内蔵GNSSも保存する');
+assert(entry2.session.summary.deviceDrms != null && entry2.session.summary.deviceCount === 2, '記録: summary に内蔵GNSSの比較値を残す');
+
+// 並行取得 OFF のときは従来どおりの形（余計なキーを増やさない）
+const rec3 = new Recorder(fakeStorage, { deviceGnss: fakeDevice });
+rec3.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+rec3.addDeviceSample({ t: 1, lat: 34.9, lon: 135.5, accuracy: 4 }); // withDevice でないので捨てる
+rec3.addEpoch({ t: new Date(), recvAt: Date.now(), lat: 34.8536, lon: 135.472, fixQuality: 1, fixMode: 3, satsUsed: 10 });
+const pending3 = rec3.stop('manual');
+assert(pending3.deviceStats === null && pending3.deviceSamples.length === 0, '記録: OFF なら内蔵GNSSを集めない');
+const entry3 = await rec3.save(pending3, { label: '比較なし' });
+assert(!('deviceStats' in entry3.point) && !('deviceDrms' in entry3.session.summary), '記録: OFF の記録の形は従来どおり');
 
 console.log(failed ? `\n${failed} 件失敗` : '\n全チェック OK');
 process.exit(failed ? 1 : 0);

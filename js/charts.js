@@ -14,6 +14,10 @@ const GRID_COLOR = 'rgba(255,255,255,0.12)';
 const LABEL_COLOR = 'rgba(255,255,255,0.45)';
 const MONO = (px) => `${px}px ui-monospace, monospace`;
 
+// 散布図の比較系列（端末内蔵GNSS）の色。M10S の橙と混ざらない色にする。
+const DEVICE_COLOR = '#b98cff';
+const DEVICE_POINT_COLOR = 'rgba(185,140,255,0.6)';
+
 // キャリーフォワード判定（純粋関数）。
 // hasSats: 今回のエポックに描画可能な衛星データがあるか
 // ageMs:   最後に有効データを受けてからの経過ms（未受信は Infinity）
@@ -287,12 +291,17 @@ export class ScatterPlotView extends CanvasView {
 
   clear() {
     this._last = null;
+    this._lastDevice = null;
     this.ctx.clearRect(0, 0, this.w, this.h);
   }
 
-  // stats: computeStaticStats の戻り値（offsets / cep50 / drms を使用）
-  update(stats) {
+  // stats:       computeStaticStats の戻り値（offsets / cep50 / drms を使用）
+  // deviceStats: 端末内蔵GNSS の比較系列（computeDeviceStats）。null で比較なし。
+  //   既定値を保持中の系列にしているのは、基底クラスのリサイズ再描画が
+  //   update(this._last) と1引数で呼ぶため（明示的に null を渡せば消える）。
+  update(stats, deviceStats = this._lastDevice) {
     this._last = stats;
+    this._lastDevice = deviceStats || null;
     this._syncSize();
     const ctx = this.ctx;
     const S = this.w;
@@ -301,8 +310,16 @@ export class ScatterPlotView extends CanvasView {
     ctx.clearRect(0, 0, S, S);
     if (!stats || !stats.offsets?.length) return;
 
+    // 比較系列は M10S の中心を共通原点にして重ねる（ばらつきに加えて中心のズレも見える）
+    const dev = this._lastDevice?.offsets?.length ? this._lastDevice : null;
+    const dE = dev?.offsetFromRef?.e || 0;
+    const dN = dev?.offsetFromRef?.n || 0;
+    const devPts = dev ? dev.offsets.map((o) => ({ e: o.e + dE, n: o.n + dN })) : [];
+
     // スケール：最大半径か CEP95 の大きい方が収まるように（最低 1 m）
-    const maxR = Math.max(1, stats.cep95 || 0, ...stats.offsets.map((o) => Math.hypot(o.e, o.n)));
+    const radii = stats.offsets.map((o) => Math.hypot(o.e, o.n));
+    for (const o of devPts) radii.push(Math.hypot(o.e, o.n));
+    const maxR = Math.max(1, stats.cep95 || 0, ...radii);
     const R = S / 2 - 24;
     const scale = R / maxR;
 
@@ -319,21 +336,34 @@ export class ScatterPlotView extends CanvasView {
       ctx.fillText(fmtM(r), cx + r * scale * 0.7071 + 2, cy - r * scale * 0.7071 - 2);
     }
 
+    // 比較系列（背面に描いて M10S を前に出す）
+    if (dev) {
+      for (const o of devPts) {
+        fillCircle(ctx, cx + o.e * scale, cy - o.n * scale, 2.5, DEVICE_POINT_COLOR);
+      }
+      // 目盛りラベル（右上）と M10S（左下 / 右下）を避けて左上に置く
+      drawStatCircle(ctx, cx + dE * scale, cy - dN * scale, dev.drms, scale, DEVICE_COLOR, '内蔵', { x: -1, y: -1 });
+    }
+
     // CEP50（緑）と DRMS（青）の円
-    drawStatCircle(ctx, cx, cy, stats.cep50, scale, '#36c98d', 'CEP50');
-    drawStatCircle(ctx, cx, cy, stats.drms, scale, '#4f9dff', 'DRMS');
+    drawStatCircle(ctx, cx, cy, stats.cep50, scale, '#36c98d', 'CEP50', { x: -1, y: 1 });
+    drawStatCircle(ctx, cx, cy, stats.drms, scale, '#4f9dff', 'DRMS', { x: 1, y: 1 });
 
     // 各点と中心
     for (const o of stats.offsets) {
       fillCircle(ctx, cx + o.e * scale, cy - o.n * scale, 2.5, 'rgba(240,169,58,0.75)');
     }
+    if (dev) fillCircle(ctx, cx + dE * scale, cy - dN * scale, 3, DEVICE_COLOR);
     fillCircle(ctx, cx, cy, 3, '#ffffff');
 
     drawCompass(ctx, cx, cy, S / 2 - 14, 10);
   }
 }
 
-function drawStatCircle(ctx, cx, cy, r, scale, color, label) {
+// 統計円（破線）＋ラベル。dir はラベルを置く象限の単位ベクトル（canvas 座標なので y>0 が下）。
+// 比較系列を重ねると M10S 側の円が相対的に小さくなり、同じ向きだとラベルが中心で潰れるため、
+// 系列ごとに向きを変え、かつ中心から最低 10 px は離す。
+function drawStatCircle(ctx, cx, cy, r, scale, color, label, dir = { x: 1, y: 1 }) {
   if (r == null || !(r > 0)) return;
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 3]);
@@ -341,9 +371,10 @@ function drawStatCircle(ctx, cx, cy, r, scale, color, label) {
   ctx.setLineDash([]);
   ctx.fillStyle = color;
   ctx.font = MONO(10);
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(label, cx + r * scale * 0.7071 + 2, cy + r * scale * 0.7071 + 2);
+  ctx.textAlign = dir.x > 0 ? 'left' : 'right';
+  ctx.textBaseline = dir.y > 0 ? 'top' : 'bottom';
+  const d = Math.max(r * scale * 0.7071, 10) + 2;
+  ctx.fillText(label, cx + dir.x * d, cy + dir.y * d);
 }
 
 // 目盛り間隔を 1/2/5×10^n に丸める

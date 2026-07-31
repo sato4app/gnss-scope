@@ -3,7 +3,7 @@
 //   入力: 出力した JSON を読み戻して IndexedDB へ取り込む
 // いずれも外部送信はしない。JSON は { app:'gnss-scope', format, session, point } 形式。
 import { escapeMarkup } from './view-utils.js';
-import { computeStaticStats } from './accuracy.js';
+import { computeStaticStats, computeDeviceStats } from './accuracy.js';
 
 const JSON_FORMAT = 1;
 
@@ -65,6 +65,26 @@ export function exportCSV(session, point) {
     }
   }
 
+  // 端末内蔵GNSS の比較値もコメント行に付ける（レートが違うため行としては混ぜない）
+  const dst = point?.deviceStats;
+  if (dst) {
+    lines.push('');
+    lines.push('# 比較: 端末内蔵GNSS（同時取得）');
+    for (const [key, value] of [
+      ['device_epochs', dst.count],
+      ['device_center_lat', dst.center.lat], ['device_center_lon', dst.center.lon],
+      ['device_std_east_m', dst.stdEastM], ['device_std_north_m', dst.stdNorthM],
+      ['device_drms_m', dst.drms], ['device_2drms_m', dst.drms2],
+      ['device_cep50_m', dst.cep50], ['device_cep95_m', dst.cep95],
+      ['device_avg_accuracy_m', dst.avgAccuracy],
+      ['device_duplicate_points', dst.dupCount],
+      ['device_center_offset_m', dst.offsetFromRef?.distM],
+      ['device_center_offset_bearing_deg', dst.offsetFromRef?.bearingDeg],
+    ]) {
+      lines.push(`# ${key},${value ?? ''}`);
+    }
+  }
+
   download(`${safeName(session.label)}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
 }
 
@@ -123,6 +143,11 @@ export async function importSessionFile(file, storage) {
 
   const id = `imp_${Date.now()}`;
   const stats = src.point.stats || computeStaticStats(src.point.samples); // 集計欠落なら再計算
+  // 端末内蔵GNSS の比較データ（無い JSON も読めるよう任意扱い）
+  const deviceSamples = Array.isArray(src.point.deviceSamples) ? src.point.deviceSamples : null;
+  const deviceStats = deviceSamples?.length
+    ? src.point.deviceStats || computeDeviceStats(deviceSamples, stats?.center || null)
+    : null;
   const session = {
     ...src.session,
     id,
@@ -139,9 +164,14 @@ export async function importSessionFile(file, storage) {
       drms: stats?.drms,
       cep50: stats?.cep50,
       cep95: stats?.cep95,
+      ...(deviceStats ? { deviceDrms: deviceStats.drms, deviceCount: deviceStats.count } : {}),
     },
   };
   const point = { id: `${id}_p`, sessionId: id, kind: 'record', stats, samples: src.point.samples };
+  if (deviceStats) {
+    point.deviceSamples = deviceSamples;
+    point.deviceStats = deviceStats;
+  }
 
   await storage.putSession(session);
   await storage.putPoint(point);

@@ -79,6 +79,7 @@
           <div><dt>DRMS(暫定)</dt><dd id="rc-drms" class="mono">—</dd></div>
           <div><dt>CEP50(暫定)</dt><dd id="rc-cep" class="mono">—</dd></div>
           <div><dt>収束判定</dt><dd id="rc-conv" class="mono">—</dd></div>
+          <div><dt>端末内蔵GNSS</dt><dd id="rc-device" class="mono">—</dd></div>
         </dl>
       </div>
 
@@ -116,13 +117,17 @@
            見出しと本体を別セルにして、左右の図の高さ位置を揃えている -->
       <div class="an-grid">
         <div class="sub-head">スカイプロット（半径=仰角 / 角度=方位 / 大きさ=SNR / 塗り=使用中）</div>
-        <div class="sub-head">DRMS（記録データのばらつき）</div>
+        <div class="sub-head">DRMS（記録データのばらつき）<label id="an-cmp-row" class="cmp-toggle" hidden><input id="an-cmp" type="checkbox" checked>端末内蔵GNSSと比較</label></div>
         <div class="an-cell">
           <canvas id="sky-plot" class="sky-canvas"></canvas>
           <div id="legend" class="legend"></div>
         </div>
         <div class="an-cell">
           <canvas id="an-scatter" class="scatter-canvas"></canvas>
+          <div id="an-scatter-legend" class="legend" hidden>
+            <span><i class="swatch" style="background:#f0a93a"></i>MAX-M10S</span>
+            <span><i class="swatch" style="background:#b98cff"></i>端末内蔵GNSS</span>
+          </div>
         </div>
         <!-- 集計テキストは行数が多いため2列ぶち抜きで散布図の下に置く -->
         <div id="an-drms" class="result-box an-wide"></div>
@@ -168,6 +173,9 @@
       </label>
       <label class="set-row">収束で自動停止（中心・DRMSが10秒横ばい）
         <input id="set-autostop" type="checkbox">
+      </label>
+      <label class="set-row">記録中に端末内蔵GNSSも取得して比較する
+        <input id="set-devgnss" type="checkbox">
       </label>
       <label class="set-row">記録 最低収集時間 [秒]
         <input id="set-minsec" type="number" min="0" step="5">

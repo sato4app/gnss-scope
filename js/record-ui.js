@@ -5,8 +5,9 @@
 //   load:   保存済み一覧から選ぶ、または JSON ファイルを取り込む
 // 収集中のライブ表示・散布図・記録一覧・エクスポートもこのモジュールが持つ。
 // 記録中の画面維持（Wake Lock）は記録の一部なのでここに含める（仕様 3-7）。
-import { $, fmt, escapeMarkup, satsText, formatStats, sessionMeta, sessionSubText, nextPointLabel } from './view-utils.js';
+import { $, fmt, escapeMarkup, satsText, formatStats, formatCompare, sessionMeta, sessionSubText, nextPointLabel } from './view-utils.js';
 import { ScatterPlotView } from './charts.js';
+import { deviceStatusText } from './device-gnss.js';
 import { exportCSV, exportGPX, exportJSON, importSessionFile } from './file-io.js';
 
 export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId }) {
@@ -15,6 +16,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     $('wakelock-state').textContent = `Wake Lock: ${msg}`;
   });
   let pending = null; // 停止後・未保存の記録
+  let deviceInfo = null; // 端末内蔵GNSS の並行取得状況（{ status, count, stats }。OFF なら null）
 
   function setRecordingUi(on) {
     $('btn-record').disabled = on;
@@ -46,6 +48,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       maxEpochs: settings.maxEpochs,
       autoStop: settings.autoStop,
       minSec: settings.minSec,
+      withDevice: settings.deviceGnss, // 端末内蔵GNSS の並行取得（比較用）
     });
     setRecordingUi(true);
     await wakeLock.acquire(); // 記録中は画面を維持
@@ -57,13 +60,34 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
   });
 
   // 収集中の1エポックごと（app.js から recorder.onUpdate 経由で配られる）
-  function onRecordUpdate({ count, elapsedSec, stats, convergence }) {
+  function onRecordUpdate({ count, elapsedSec, stats, convergence, device }) {
     $('rc-count').textContent = String(count);
     $('rc-elapsed').textContent = `${Math.floor(elapsedSec)} s`;
     $('rc-drms').textContent = fmt(stats?.drms, 2, ' m');
     $('rc-cep').textContent = fmt(stats?.cep50, 2, ' m');
     $('rc-conv').textContent = convergenceText(elapsedSec, convergence);
-    if (stats) scatterView.update(stats);
+    deviceInfo = device;
+    renderDeviceRow();
+    if (stats) scatterView.update(stats, device?.stats || null);
+  }
+
+  // 端末内蔵GNSS の並行取得状況（1行）。許可待ち・拒否も分かるようにする。
+  function renderDeviceRow() {
+    $('rc-device').textContent = deviceText(deviceInfo);
+  }
+
+  function deviceText(d) {
+    if (!d) return '—（OFF）';
+    if (!d.count) return deviceStatusText(d.status); // まだ1点も来ていない = 許可待ち/拒否/非対応
+    const acc = d.stats?.avgAccuracy;
+    return `${d.count} 点` + (acc != null ? ` / accuracy ${acc.toFixed(1)} m` : '');
+  }
+
+  // 許可ダイアログの結果などをエポック待ちにせず反映する（app.js の onStatus から）
+  function onDeviceStatus(status) {
+    if (!deviceInfo) return;
+    deviceInfo = { ...deviceInfo, status };
+    renderDeviceRow();
   }
 
   // 収束判定の状況（docs/algospec-202607.md 3.）
@@ -83,8 +107,9 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     setRecordingUi(false);
     await wakeLock.release();
 
-    scatterView.update(pending.stats);
-    $('rec-result').textContent = formatStats({ label: '未保存の記録', ...pending }, pending.stats);
+    scatterView.update(pending.stats, pending.deviceStats || null);
+    const compareText = pending.stats && pending.deviceStats ? `\n${formatCompare(pending.stats, pending.deviceStats)}` : '';
+    $('rec-result').textContent = formatStats({ label: '未保存の記録', ...pending }, pending.stats) + compareText;
     if (!pending.stats) {
       pending = null;
       setPendingUi(false);
@@ -107,7 +132,10 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       });
       pending = null;
       setPendingUi(false);
-      $('rec-result').textContent = formatStats(sessionMeta(entry.session), entry.point.stats);
+      const { stats, deviceStats } = entry.point;
+      $('rec-result').textContent =
+        formatStats(sessionMeta(entry.session), stats) +
+        (stats && deviceStats ? `\n${formatCompare(stats, deviceStats)}` : '');
       await load(entry); // 保存した記録をそのまま解析・地図の対象にする
     } catch (e) {
       alert(`保存に失敗しました: ${e.message}`);
@@ -204,9 +232,10 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
 
   setRecordingUi(false);
   setPendingUi(false);
+  renderDeviceRow();
   refreshList();
 
-  return { update, onRecordUpdate, onRecordStop, onShow: () => scatterView.redraw() };
+  return { update, onRecordUpdate, onRecordStop, onDeviceStatus, onShow: () => scatterView.redraw() };
 }
 
 // ---- Wake Lock（記録中の画面維持） ----

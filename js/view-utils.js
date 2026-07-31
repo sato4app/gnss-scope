@@ -41,6 +41,14 @@ export const fmt = (v, digits = 1, unit = '') => (v == null ? '—' : v.toFixed(
 const ESCAPES = { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&#39;' };
 export const escapeMarkup = (s) => String(s).replace(/[<>&"']/g, (c) => ESCAPES[c]);
 
+// 方位角[deg] → 16方位の日本語表記（記録の中心どうしのズレの向きに使う）
+const COMPASS_16 = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東',
+  '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+export function bearingText(deg) {
+  if (deg == null) return '—';
+  return COMPASS_16[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+}
+
 // 「使用衛星 / 視野内衛星」の表示（記録タブ・解析タブで共用）
 export function satsText(epoch) {
   if (epoch.satsUsed == null && epoch.satsInView == null) return '—';
@@ -136,6 +144,31 @@ export function formatStats(meta, st) {
   ].join('\n');
 }
 
+// 端末内蔵GNSS との比較ブロック（DRMS 表示に formatStats の後ろへ付ける。仕様 5-4）。
+// st: M10S の集計 / dst: computeDeviceStats の戻り値。
+// accuracy は 68% 円半径で DRMS（1σ相当）とは定義が違うため、同じ行に並べず参考値として置く。
+export function formatCompare(st, dst) {
+  if (!st || !dst) return '';
+  const ratio = st.drms > 0 && dst.drms != null ? `（${(dst.drms / st.drms).toFixed(1)}倍）` : '';
+  const off = dst.offsetFromRef;
+  const lines = [
+    `── 比較: 端末内蔵GNSS（同時取得 ${dst.count} 点 / 座標重複 ${dst.dupCount} 点）──`,
+    `DRMS: M10S ${st.drms.toFixed(2)} m / 内蔵 ${fmt(dst.drms, 2)} m${ratio}`,
+    `CEP50: M10S ${fmt(st.cep50, 2)} m / 内蔵 ${fmt(dst.cep50, 2)} m`,
+    `CEP95: M10S ${fmt(st.cep95, 2)} m / 内蔵 ${fmt(dst.cep95, 2)} m`,
+    `標準偏差(東西/南北): M10S ${st.stdEastM.toFixed(2)}/${st.stdNorthM.toFixed(2)} m / ` +
+      `内蔵 ${fmt(dst.stdEastM, 2)}/${fmt(dst.stdNorthM, 2)} m`,
+    `中心のズレ: ${fmt(off?.distM, 2)} m（${bearingText(off?.bearingDeg)}）※M10S 中心からの相対。真の誤差ではない`,
+    `内蔵の平均 accuracy: ${fmt(dst.avgAccuracy, 1)} m（68%円半径。DRMS とは定義が異なる参考値）`,
+  ];
+  // 静止中は OS が更新を間引くことがあり、重複が多いとばらつきが過小評価される
+  if (dst.count > 0 && dst.dupCount / dst.count >= 0.3) {
+    lines.push('※同じ座標の繰り返しが多く、内蔵のばらつきを過小評価している可能性があります');
+  }
+  lines.push('※内蔵は WiFi/基地局を融合した測位（Fused Location）で、GNSS 単独の性能ではありません');
+  return lines.join('\n');
+}
+
 // 保存済みセッション → formatStats に渡す meta
 export function sessionMeta(session) {
   return { label: session.label, stopReason: session.summary?.stopReason, rxStats: session.summary?.rxStats };
@@ -148,6 +181,7 @@ export function sessionSubText(session) {
   return (
     `${when}　${s?.count ?? 0}点` +
     (s?.drms != null ? `　DRMS ${s.drms.toFixed(2)}m` : '') +
+    (s?.deviceDrms != null ? `（内蔵 ${s.deviceDrms.toFixed(2)}m）` : '') +
     (s?.lat != null ? `　(${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})` : '')
   );
 }

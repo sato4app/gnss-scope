@@ -10,6 +10,7 @@ import { StreamStats } from './stream-stats.js';
 import { estimateHorizontalAccuracy } from './accuracy.js';
 import { Storage } from './storage.js';
 import { Recorder } from './recorder.js';
+import { DeviceGnss } from './device-gnss.js';
 import { MapView, initMapUI } from './map.js';
 import { TileCache, initTileUI } from './tile-cache.js';
 import { initConnectUI } from './connect-ui.js';
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS = {
   minSec: 30, // 記録の最低収集時間
   mapType: 'std',
   trackEnabled: true,
+  deviceGnss: true, // 記録中に端末内蔵GNSSも取得して DRMS を比較する
 };
 
 async function main() {
@@ -49,15 +51,22 @@ async function main() {
   let analysisUI = null;
   let mapUI = null;
 
+  // 記録中だけ動かす端末内蔵GNSS（DRMS の比較対象。仕様 4-8）
+  const deviceGnss = new DeviceGnss({
+    onSample: (sample) => recorder.addDeviceSample(sample),
+    onStatus: (status) => recordUI?.onDeviceStatus(status),
+  });
+
   const recorder = new Recorder(storage, {
     getRxStats: () => streamStats.snapshot(), // 記録1回分の受信品質を summary に残す
+    deviceGnss,
     onUpdate: (u) => {
       recordUI.onRecordUpdate(u);
-      analysisUI.setLiveStats(u.stats);
+      analysisUI.setLiveStats(u.stats, u.device?.stats || null);
     },
     onStop: (pending) => {
       recordUI.onRecordStop(pending);
-      analysisUI.setLiveStats(pending.stats);
+      analysisUI.setLiveStats(pending.stats, pending.deviceStats || null);
     },
   });
 

@@ -6,8 +6,10 @@
 //   save:   ラベル・メモを付けて IndexedDB（storage.js）へ保存する。
 // 集計は accuracy.js の computeStaticStats。測定区間の受信品質（rxStats）も
 // summary に残す（docs/algospec-202607.md 5.）。
+// 記録中は端末内蔵GNSS（device-gnss.js）も並行して取り、同じ区間の比較対象として
+// deviceSamples / deviceStats に残す（仕様 4-8）。
 // 記録タブの UI 配線（ボタン・表示）は record-ui.js 側。
-import { computeStaticStats, evaluateConvergence } from './accuracy.js';
+import { computeStaticStats, computeDeviceStats, evaluateConvergence } from './accuracy.js';
 import { diffRxStats } from './stream-stats.js';
 
 // 収束自動停止の判定パラメータ（設定画面には出さないモジュール定数）
@@ -49,11 +51,12 @@ function toSample(epoch) {
 }
 
 export class Recorder {
-  constructor(storage, { onUpdate, onStop, getRxStats } = {}) {
+  constructor(storage, { onUpdate, onStop, getRxStats, deviceGnss } = {}) {
     this.storage = storage;
     this.onUpdate = onUpdate || (() => {}); // 収集中のライブ表示更新
     this.onStop = onStop || (() => {}); // 自動停止を含む停止通知（引数 = pending）
     this.getRxStats = getRxStats || null; // 受信品質統計の snapshot 提供元（app.js）
+    this.deviceGnss = deviceGnss || null; // 端末内蔵GNSS の並行取得（null 可）
     this.latestEpoch = null;
     this.current = null; // 収集中: { startedAt, samples, maxSec, maxEpochs, paused, ... }
   }
@@ -68,6 +71,8 @@ export class Recorder {
     rec.samples.push(toSample(epoch));
     const elapsedSec = (Date.now() - rec.startedAt) / 1000;
     const stats = computeStaticStats(rec.samples); // 暫定ばらつき（点数は高々数百なので毎回計算で十分軽い）
+    // 端末内蔵GNSS の暫定集計も同じ頻度で更新する（比較を記録中から見せるため）
+    rec.deviceStats = rec.withDevice ? computeDeviceStats(rec.deviceSamples, stats?.center || null) : null;
 
     // 収束状況の算出（品質ゲート通過エポックのみ履歴に積む。不良で連続性リセット）
     let convergence = null;
@@ -83,7 +88,7 @@ export class Recorder {
       }
     }
 
-    this.onUpdate({ count: rec.samples.length, elapsedSec, stats, convergence });
+    this.onUpdate({ count: rec.samples.length, elapsedSec, stats, convergence, device: this._deviceInfo() });
 
     // 収束停止（最低時間経過＋直近 holdSec 窓で中心・DRMS 横ばい）
     if (convergence && convergence.stable) {
@@ -105,11 +110,28 @@ export class Recorder {
 
   // 画面非表示中は収集を一時停止する（BLE も切れるため。仕様 3-7）
   setPaused(paused) {
-    if (this.current) this.current.paused = paused;
+    if (!this.current) return;
+    this.current.paused = paused;
+    if (this.current.withDevice) this.deviceGnss.setPaused(paused);
+  }
+
+  // 端末内蔵GNSS の 1 サンプル（device-gnss.js → app.js 経由。収集中のみ蓄積する）
+  addDeviceSample(sample) {
+    const rec = this.current;
+    if (!rec || rec.paused || !rec.withDevice) return;
+    if (sample?.lat == null || sample.lon == null) return;
+    rec.deviceSamples.push(sample);
+  }
+
+  // 収集状況表示用（記録タブの「端末内蔵GNSS」行）。並行取得していなければ null。
+  _deviceInfo() {
+    const rec = this.current;
+    if (!rec?.withDevice) return null;
+    return { status: this.deviceGnss.status, count: rec.deviceSamples.length, stats: rec.deviceStats };
   }
 
   // ---- record ----
-  start({ maxSec = 60, maxEpochs = 120, autoStop = true, minSec = 30 } = {}) {
+  start({ maxSec = 60, maxEpochs = 120, autoStop = true, minSec = 30, withDevice = false } = {}) {
     if (this.current) return;
     this.current = {
       startedAt: Date.now(),
@@ -121,8 +143,12 @@ export class Recorder {
       minSec, // 最低収集時間 [秒]（これ未満では絶対に停止しない）
       convHistory: [], // [{ t, lat, lon, drms }] 品質ゲート通過エポックのみ
       rxStart: this.getRxStats ? this.getRxStats() : null, // 受信品質の測定開始時点
+      withDevice: withDevice && !!this.deviceGnss, // 端末内蔵GNSS を並行取得するか
+      deviceSamples: [], // 端末内蔵GNSS のサンプル（M10S とはレートも点数も揃わない）
+      deviceStats: null,
     };
-    this.onUpdate({ count: 0, elapsedSec: 0, stats: null, convergence: null });
+    if (this.current.withDevice) this.deviceGnss.start();
+    this.onUpdate({ count: 0, elapsedSec: 0, stats: null, convergence: null, device: this._deviceInfo() });
   }
 
   // ---- stop ----
@@ -131,10 +157,15 @@ export class Recorder {
     const rec = this.current;
     if (!rec) return null;
     this.current = null;
+    if (rec.withDevice) this.deviceGnss.stop();
 
+    const stats = computeStaticStats(rec.samples);
     const pending = {
-      stats: computeStaticStats(rec.samples),
+      stats,
       samples: rec.samples,
+      // 端末内蔵GNSS の比較値（M10S の中心を基準にズレを出す）
+      deviceSamples: rec.deviceSamples,
+      deviceStats: rec.withDevice ? computeDeviceStats(rec.deviceSamples, stats?.center || null) : null,
       startedAt: rec.startedAt,
       endedAt: Date.now(),
       stopReason: reason, // 'converged' | 'timeout' | 'maxEpochs' | 'manual'
@@ -150,6 +181,7 @@ export class Recorder {
   async save(pending, { label = '', memo = '' } = {}) {
     if (!pending) throw new Error('保存する記録がありません');
     const st = pending.stats;
+    const dst = pending.deviceStats;
     const id = `rec_${pending.startedAt}`;
     const session = {
       id,
@@ -169,6 +201,8 @@ export class Recorder {
             cep95: st.cep95,
             stopReason: pending.stopReason,
             rxStats: pending.rxStats,
+            // 一覧で M10S と並べて見せるための比較値
+            ...(dst ? { deviceDrms: dst.drms, deviceCount: dst.count } : {}),
           }
         : { count: 0, stopReason: pending.stopReason, rxStats: pending.rxStats },
     };
@@ -179,6 +213,11 @@ export class Recorder {
       stats: st, // 集計値（中心・標準偏差・DRMS・CEP・散布図オフセット等）
       samples: pending.samples, // 生エポック群（衛星リスト込み）
     };
+    // 端末内蔵GNSS を取れたときだけ足す（取っていない記録の形は従来どおり）
+    if (dst) {
+      point.deviceSamples = pending.deviceSamples;
+      point.deviceStats = dst;
+    }
     await this.storage.putSession(session);
     await this.storage.putPoint(point);
     return { session, point };

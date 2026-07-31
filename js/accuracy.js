@@ -156,3 +156,40 @@ export function computeStaticStats(epochs) {
     offsets,
   };
 }
+
+// 基準点 from から to への東西(e)/南北(n)オフセット [m]・距離・方位。
+// 2つの記録の「中心がどれだけ離れているか」を出すのに使う。
+export function offsetBetween(from, to) {
+  if (from?.lat == null || to?.lat == null) return null;
+  const { latM, lonM } = metersPerDegree(from.lat);
+  const e = (to.lon - from.lon) * lonM;
+  const n = (to.lat - from.lat) * latM;
+  return {
+    e,
+    n,
+    distM: Math.hypot(e, n),
+    bearingDeg: ((Math.atan2(e, n) * 180) / Math.PI + 360) % 360,
+  };
+}
+
+// 端末内蔵GNSS サンプル群の集計（仕様 4-8）。
+// ばらつきは M10S と同じ定義（computeStaticStats）で出し、比較に要る3項目を足す:
+//   avgAccuracy   Geolocation の accuracy（68%円半径）の平均。DRMS とは定義が違う参考値
+//   dupCount      直前と完全に同じ座標だった点数。OS が静止中の更新を間引くと
+//                 ばらつきが過小評価される（＝内蔵の方が優秀に見える）ため必ず示す
+//   offsetFromRef 基準（M10S）の中心から見た中心のズレ。真の誤差ではなく相対値
+export function computeDeviceStats(samples, refCenter = null) {
+  const st = computeStaticStats(samples || []);
+  if (!st) return null;
+
+  const pts = (samples || []).filter((s) => s.lat != null && s.lon != null);
+  let dupCount = 0;
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].lat === pts[i - 1].lat && pts[i].lon === pts[i - 1].lon) dupCount++;
+  }
+
+  st.avgAccuracy = mean(pts.map((s) => s.accuracy).filter((v) => v != null));
+  st.dupCount = dupCount;
+  st.offsetFromRef = offsetBetween(refCenter, st.center);
+  return st;
+}

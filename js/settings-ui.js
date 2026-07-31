@@ -31,6 +31,7 @@ export function initSettingsUI({ settings, storage, mapView, defaults }) {
   ];
   const CHECK_ROWS = [
     ['set-autostop', 'autoStop', null],
+    ['set-devgnss', 'deviceGnss', null],
     ['set-track', 'trackEnabled', (on) => mapView.setTrackEnabled(on)],
   ];
 

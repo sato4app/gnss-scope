@@ -2,7 +2,7 @@
 // データソースは「ライブ（受信中の最新エポック）」と「読込データ（load した記録）」を
 // ラジオで切り替える。読込データはスライダで任意のエポックを選んで再現できる
 // （記録時に衛星リストも保存しているため、後からでもスカイプロット/SNR を描ける）。
-import { $, fmt, FIX_MODE, satsText, formatStats, sessionMeta } from './view-utils.js';
+import { $, fmt, FIX_MODE, satsText, formatStats, formatCompare, sessionMeta } from './view-utils.js';
 import { CONSTELLATION_COLORS, CONSTELLATION_LABELS } from './nmea.js';
 import { SkyPlotView, SnrChartView, ScatterPlotView } from './charts.js';
 import { estimateHorizontalAccuracy } from './accuracy.js';
@@ -38,6 +38,7 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
   let source = 'live';
   let loaded = null; // { session, point }
   let liveStats = null; // 記録中/直近の記録の集計（ライブ表示時の DRMS）
+  let liveDeviceStats = null; // 同区間の端末内蔵GNSS の集計（比較用。無ければ null）
   let index = 0; // 読込データのエポック位置
 
   // 凡例（コンステレーション色）
@@ -93,13 +94,20 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     for (const id of ['an-mode', 'an-sats', 'an-accsrc', 'an-gst', 'an-sys']) $(id).textContent = '—';
   }
 
-  // DRMS（散布図＋集計テキスト）
+  // DRMS（散布図＋集計テキスト）。同区間の端末内蔵GNSS があれば重ねて比較する（仕様 5-4）。
   function renderDrms() {
     const st = source === 'loaded' ? loaded?.point?.stats : liveStats;
-    scatterView.update(st);
+    const dst = source === 'loaded' ? loaded?.point?.deviceStats || null : liveDeviceStats;
+    // 比較データがある記録のときだけトグルを出す
+    $('an-cmp-row').hidden = !(st && dst);
+    const cmp = st && dst && $('an-cmp').checked ? dst : null;
+    $('an-scatter-legend').hidden = !cmp;
+
+    scatterView.update(st, cmp);
     if (st) {
-      $('an-drms').textContent =
-        source === 'loaded' ? formatStats(sessionMeta(loaded.session), st) : formatStats({ label: '記録中/直近の記録' }, st);
+      const meta = source === 'loaded' ? sessionMeta(loaded.session) : { label: '記録中/直近の記録' };
+      const compareText = cmp ? `\n${formatCompare(st, cmp)}` : '';
+      $('an-drms').textContent = formatStats(meta, st) + compareText;
     } else {
       $('an-drms').textContent =
         source === 'loaded'
@@ -143,6 +151,8 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     });
   }
 
+  $('an-cmp').addEventListener('change', renderDrms);
+
   $('an-epoch').addEventListener('input', (e) => {
     index = Math.max(0, +e.target.value || 0);
     renderEpochBox();
@@ -157,9 +167,10 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     if (source === 'live') renderEpoch(epoch);
   }
 
-  // 記録中/停止直後の集計（ライブ表示の DRMS 用）
-  function setLiveStats(stats) {
+  // 記録中/停止直後の集計（ライブ表示の DRMS 用）。deviceStats は比較系列（無ければ null）。
+  function setLiveStats(stats, deviceStats = null) {
     liveStats = stats;
+    liveDeviceStats = deviceStats;
     if (source === 'live') renderDrms();
   }
 

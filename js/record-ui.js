@@ -4,11 +4,20 @@
 //   save:   地点名・メモを付けて IndexedDB へ保存 → そのまま読込データにする
 //   load:   保存済み一覧から選ぶ、または JSON ファイルを取り込む
 // 収集中のライブ表示・散布図・記録一覧・エクスポートもこのモジュールが持つ。
+// 記録一覧は「調査日 → 地点」のツリーで出し、調査日ごとに
+// 対応表CSV（1行1地点で NMEA と Android を並べた表）とバンドルJSONを出せる。
 // 記録中の画面維持（Wake Lock）は記録の一部なのでここに含める（仕様 3-7）。
-import { $, fmt, escapeMarkup, satsText, formatStats, formatCompare, sessionMeta, sessionSubText, nextPointLabel } from './view-utils.js';
+import {
+  $, fmt, escapeMarkup, satsText, formatStats, formatCompare, formatWindow,
+  sessionMeta, sessionSubText, pairingSubText,
+} from './view-utils.js';
+import { groupBySurvey, nextPointNo, pointLabel, surveyIdOf, surveySummary } from './survey.js';
 import { ScatterPlotView } from './charts.js';
 import { deviceStatusText } from './device-gnss.js';
-import { exportCSV, exportGPX, exportJSON, importSessionFile } from './file-io.js';
+import {
+  exportCSV, exportGPX, exportJSON, exportNMEA,
+  exportSurveyCompareCSV, exportSurveyJSON, importSessionFile,
+} from './file-io.js';
 
 export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId }) {
   const scatterView = new ScatterPlotView($('rec-scatter'));
@@ -49,6 +58,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       autoStop: settings.autoStop,
       minSec: settings.minSec,
       withDevice: settings.deviceGnss, // 端末内蔵GNSS の並行取得（比較用）
+      saveRaw: settings.saveRawNmea, // 生NMEA行もそのまま残すか
     });
     setRecordingUi(true);
     await wakeLock.acquire(); // 記録中は画面を維持
@@ -60,12 +70,13 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
   });
 
   // 収集中の1エポックごと（app.js から recorder.onUpdate 経由で配られる）
-  function onRecordUpdate({ count, elapsedSec, stats, convergence, device }) {
+  function onRecordUpdate({ count, elapsedSec, stats, convergence, device, rawLines }) {
     $('rc-count').textContent = String(count);
     $('rc-elapsed').textContent = `${Math.floor(elapsedSec)} s`;
     $('rc-drms').textContent = fmt(stats?.drms, 2, ' m');
     $('rc-cep').textContent = fmt(stats?.cep50, 2, ' m');
     $('rc-conv').textContent = convergenceText(elapsedSec, convergence);
+    $('rc-raw').textContent = rawLines == null ? '—（保存OFF）' : `${rawLines} 行`;
     deviceInfo = device;
     renderDeviceRow();
     if (stats) scatterView.update(stats, device?.stats || null);
@@ -108,18 +119,30 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     await wakeLock.release();
 
     scatterView.update(pending.stats, pending.deviceStats || null);
-    const compareText = pending.stats && pending.deviceStats ? `\n${formatCompare(pending.stats, pending.deviceStats)}` : '';
-    $('rec-result').textContent = formatStats({ label: '未保存の記録', ...pending }, pending.stats) + compareText;
+    $('rec-result').textContent = pendingText(pending);
     if (!pending.stats) {
       pending = null;
       setPendingUi(false);
       return;
     }
-    // 既定の地点名は yyyy-mm-dd-xx（同日連番）
-    const sessions = await storage.getSessions();
-    $('rec-label').value = nextPointLabel(sessions.map((s) => s.label));
+    // 既定の地点名は yyyy-mm-dd-xx（調査日 ＋ 同日連番）。保存時に recorder が採番し直す。
+    const surveyId = surveyIdOf(pending.startedAt);
+    const siblings = await storage.getSessionsBySurvey(surveyId);
+    $('rec-label').value = pointLabel(surveyId, nextPointNo(siblings, surveyId));
     $('rec-memo').value = '';
     setPendingUi(true);
+  }
+
+  // 未保存の記録の結果テキスト（集計 → 2系統の比較 → 測定区間の対応）
+  function pendingText(p) {
+    const summary = { rawLines: p.rawNmea ? p.rawNmea.length : null, rawTruncated: p.rawTruncated };
+    return [
+      formatStats({ label: '未保存の記録', ...p }, p.stats),
+      p.stats && p.deviceStats ? formatCompare(p.stats, p.deviceStats) : '',
+      formatWindow(p.window, summary),
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   // ---- save ----
@@ -132,15 +155,24 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       });
       pending = null;
       setPendingUi(false);
-      const { stats, deviceStats } = entry.point;
-      $('rec-result').textContent =
-        formatStats(sessionMeta(entry.session), stats) +
-        (stats && deviceStats ? `\n${formatCompare(stats, deviceStats)}` : '');
+      $('rec-result').textContent = savedText(entry.session, entry.point);
       await load(entry); // 保存した記録をそのまま解析・地図の対象にする
     } catch (e) {
       alert(`保存に失敗しました: ${e.message}`);
     }
   });
+
+  // 保存済み・読込済みの記録の結果テキスト（未保存版 pendingText と同じ並び）
+  function savedText(session, point) {
+    const meta = sessionMeta(session);
+    return [
+      formatStats(meta, point.stats),
+      point.stats && point.deviceStats ? formatCompare(point.stats, point.deviceStats) : '',
+      formatWindow(session.window, session.summary),
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
 
   // ---- load ----
   // 読込中の記録を一覧で強調するため、onLoad → 一覧再描画の順で行う
@@ -155,15 +187,17 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     e.target.value = ''; // 同じファイルを続けて選べるようにする
     if (!file) return;
     try {
-      const entry = await importSessionFile(file, storage);
-      await load(entry);
-      alert(`取り込みました: ${entry.session.label}（${entry.point.samples.length} エポック）`);
+      // 単体・バンドル（調査日まるごと）どちらの JSON も同じ入口で受ける
+      const entries = await importSessionFile(file, storage);
+      await load(entries[entries.length - 1]);
+      const epochs = entries.reduce((n, e) => n + e.point.samples.length, 0);
+      alert(`取り込みました: ${entries.length} 地点 / 合計 ${epochs} エポック`);
     } catch (err) {
       alert(`取り込みに失敗しました: ${err.message}`);
     }
   });
 
-  // 記録一覧の行アクション（読込 / エクスポート / 削除）
+  // 地点の行アクション（読込 / エクスポート / 削除）
   async function runAction(act, session) {
     if (act === 'load') {
       const point = (await storage.getPointsBySession(session.id))[0];
@@ -182,42 +216,104 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       return;
     }
     const point = (await storage.getPointsBySession(session.id))[0] || null;
-    const exporters = { csv: exportCSV, gpx: exportGPX, json: exportJSON };
-    exporters[act]?.(session, point);
+    const exporters = { csv: exportCSV, gpx: exportGPX, json: exportJSON, nmea: exportNMEA };
+    try {
+      exporters[act]?.(session, point);
+    } catch (e) {
+      alert(e.message);
+    }
   }
 
+  // 調査日（1日ぶん）のアクション。20地点を1ファイルにまとめて持ち出すための入口。
+  async function runSurveyAction(act, survey) {
+    if (act === 'delsurvey') {
+      const sessions = await storage.getSessionsBySurvey(survey.id);
+      if (!confirm(`「${survey.label || survey.id}」の ${sessions.length} 地点をまとめて削除しますか？`)) return;
+      const loadedGone = sessions.some((s) => s.id === getLoadedId());
+      await storage.deleteSurvey(survey.id);
+      if (loadedGone) await load(null);
+      else await refreshList();
+      return;
+    }
+    const entries = await storage.getSurveyEntries(survey.id);
+    if (!entries.length) {
+      alert('この調査日には地点がありません');
+      return;
+    }
+    if (act === 'compare') exportSurveyCompareCSV(survey, entries);
+    else if (act === 'bundle') exportSurveyJSON(survey, entries);
+  }
+
+  // 記録一覧：調査日 → 地点 のツリー。地点の対応（NMEA / Android が揃っているか）も各行に出す。
   async function refreshList() {
-    const sessions = await storage.getSessions();
     const ul = $('session-list');
     ul.innerHTML = '';
+    const sessions = await storage.getSessions();
     if (!sessions.length) {
       ul.innerHTML = '<li class="s-sub">記録はまだありません</li>';
       return;
     }
+    const surveys = new Map((await storage.getSurveys()).map((s) => [s.id, s]));
     const loadedId = getLoadedId();
-    for (const session of sessions) {
+
+    for (const group of groupBySurvey(sessions)) {
+      const survey = surveys.get(group.surveyId) || { id: group.surveyId, label: group.surveyId };
+      const sum = surveySummary(group.sessions);
       const li = document.createElement('li');
-      if (session.id === loadedId) li.classList.add('loaded');
-      const imported = !!session.importedAt;
+      li.className = 'survey';
       li.innerHTML = `
-        <div class="s-head">
-          <span class="s-type ${imported ? 'imported' : ''}">${imported ? '取込' : '記録'}</span>
-          <span class="s-label">${escapeMarkup(session.label)}</span>
-        </div>
-        <div class="s-sub">${sessionSubText(session)}</div>
-        <div class="s-actions">
-          <button class="btn" data-act="load">読込</button>
-          <button class="btn" data-act="csv">CSV</button>
-          <button class="btn" data-act="gpx">GPX</button>
-          <button class="btn" data-act="json">JSON</button>
-          <button class="btn danger" data-act="del">削除</button>
-        </div>`;
-      li.querySelector('.s-actions').addEventListener('click', (ev) => {
-        const act = ev.target.dataset?.act;
-        if (act) runAction(act, session);
+        <details open>
+          <summary>
+            <span class="sv-date">${escapeMarkup(survey.label || survey.id)}</span>
+            <span class="sv-count">${sum.points} 地点</span>
+            <span class="sv-pair">両系統 ${sum.both}${sum.gnssOnly ? ` / NMEAのみ ${sum.gnssOnly}` : ''}${sum.deviceOnly ? ` / Androidのみ ${sum.deviceOnly}` : ''}</span>
+          </summary>
+          <div class="sv-sub">平均DRMS: NMEA ${fmt(sum.avgDrms, 2, ' m')} / Android ${fmt(sum.avgDeviceDrms, 2, ' m')}</div>
+          <div class="s-actions sv-actions">
+            <button class="btn" data-sact="compare">📊 対応表CSV</button>
+            <button class="btn" data-sact="bundle">📦 バンドルJSON</button>
+            <button class="btn danger" data-sact="delsurvey">日ごと削除</button>
+          </div>
+          <ul class="point-list"></ul>
+        </details>`;
+      li.querySelector('.sv-actions').addEventListener('click', (ev) => {
+        const act = ev.target.dataset?.sact;
+        if (act) runSurveyAction(act, survey);
       });
+
+      const pointList = li.querySelector('.point-list');
+      for (const session of group.sessions) pointList.appendChild(pointRow(session, loadedId));
       ul.appendChild(li);
     }
+  }
+
+  // 1地点ぶんの行
+  function pointRow(session, loadedId) {
+    const li = document.createElement('li');
+    if (session.id === loadedId) li.classList.add('loaded');
+    const imported = !!session.importedAt;
+    const hasRaw = (session.summary?.rawLines ?? 0) > 0;
+    li.innerHTML = `
+      <div class="s-head">
+        <span class="s-no">No.${session.pointNo ?? '—'}</span>
+        <span class="s-type ${imported ? 'imported' : ''}">${imported ? '取込' : '記録'}</span>
+        <span class="s-label">${escapeMarkup(session.label)}</span>
+      </div>
+      <div class="s-sub">${sessionSubText(session)}</div>
+      <div class="s-sub s-pair">${pairingSubText(session)}</div>
+      <div class="s-actions">
+        <button class="btn" data-act="load">読込</button>
+        <button class="btn" data-act="csv">CSV</button>
+        <button class="btn" data-act="gpx">GPX</button>
+        <button class="btn" data-act="nmea"${hasRaw ? '' : ' disabled'}>NMEA</button>
+        <button class="btn" data-act="json">JSON</button>
+        <button class="btn danger" data-act="del">削除</button>
+      </div>`;
+    li.querySelector('.s-actions').addEventListener('click', (ev) => {
+      const act = ev.target.dataset?.act;
+      if (act) runAction(act, session);
+    });
+    return li;
   }
 
   // ---- 現在の測位値（記録していない間も表示する） ----

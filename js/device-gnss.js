@@ -72,7 +72,11 @@ export class DeviceGnss {
     if (this.paused) return;
     const c = pos.coords;
     this.onSample({
-      t: pos.timestamp, // 端末時計。M10S の GPS 時刻とはズレうるので時刻同期には使わない
+      // t は「OS が測位を確定した時刻」。maximumAge:0 でも Fused Location は
+      // 数秒前に確定した fix を返すことがあり、受け取った時刻とは一致しない。
+      // 区間の突き合わせには受信時刻 recvAt を使う（M10S 側の recvAt と同じ役割）。
+      t: pos.timestamp,
+      recvAt: Date.now(),
       lat: c.latitude,
       lon: c.longitude,
       accuracy: c.accuracy ?? null, // 68% 円半径 [m]

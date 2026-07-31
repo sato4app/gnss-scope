@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   mapType: 'std',
   trackEnabled: true,
   deviceGnss: true, // 記録中に端末内蔵GNSSも取得して DRMS を比較する
+  saveRawNmea: true, // 記録中の生NMEA行もそのまま保存する（後から別ツールで再解析するため）
 };
 
 async function main() {
@@ -131,6 +132,9 @@ async function main() {
     streamStats,
     onFrame: (frame) => {
       for (const line of lineBuffer.push(frame)) {
+        // 記録中なら受信したそのままの行も残す（パースの前に分岐させる。
+        // チェックサムNG行・$PPICO も「生」の一部として保存対象に含める）
+        recorder.addRawLine(line);
         const parsed = parseLine(line);
         if (parsed) assembler.add(parsed);
       }

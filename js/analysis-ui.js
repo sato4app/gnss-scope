@@ -2,7 +2,7 @@
 // データソースは「ライブ（受信中の最新エポック）」と「読込データ（load した記録）」を
 // ラジオで切り替える。読込データはスライダで任意のエポックを選んで再現できる
 // （記録時に衛星リストも保存しているため、後からでもスカイプロット/SNR を描ける）。
-import { $, fmt, FIX_MODE, satsText, formatStats, formatCompare, sessionMeta } from './view-utils.js';
+import { $, fmt, FIX_MODE, satsText, formatStats, formatCompare, formatWindow, sessionMeta } from './view-utils.js';
 import { CONSTELLATION_COLORS, CONSTELLATION_LABELS } from './nmea.js';
 import { SkyPlotView, SnrChartView, ScatterPlotView } from './charts.js';
 import { estimateHorizontalAccuracy } from './accuracy.js';
@@ -106,8 +106,11 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     scatterView.update(st, cmp);
     if (st) {
       const meta = source === 'loaded' ? sessionMeta(loaded.session) : { label: '記録中/直近の記録' };
-      const compareText = cmp ? `\n${formatCompare(st, cmp)}` : '';
-      $('an-drms').textContent = formatStats(meta, st) + compareText;
+      // 読込データでは 2系統の測定区間（対応の検証）も出す
+      const windowText = source === 'loaded' ? formatWindow(loaded.session.window, loaded.session.summary) : '';
+      $('an-drms').textContent = [formatStats(meta, st), cmp ? formatCompare(st, cmp) : '', windowText]
+        .filter(Boolean)
+        .join('\n');
     } else {
       $('an-drms').textContent =
         source === 'loaded'

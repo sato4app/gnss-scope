@@ -80,6 +80,7 @@
           <div><dt>CEP50(暫定)</dt><dd id="rc-cep" class="mono">—</dd></div>
           <div><dt>収束判定</dt><dd id="rc-conv" class="mono">—</dd></div>
           <div><dt>端末内蔵GNSS</dt><dd id="rc-device" class="mono">—</dd></div>
+          <div><dt>生NMEA</dt><dd id="rc-raw" class="mono">—</dd></div>
         </dl>
       </div>
 
@@ -92,11 +93,12 @@
         <input id="rec-memo" type="text" placeholder="メモ（任意）">
       </div>
 
-      <div class="sub-head">記録一覧（保存済み）</div>
+      <div class="sub-head">記録一覧（調査日 → 地点）</div>
       <div class="conn-bar">
         <button id="btn-import" class="btn">📂 JSON取込</button>
         <input id="file-import" type="file" accept="application/json,.json" hidden>
       </div>
+      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の NMEA と Android の測位は同じレコードに入るため対応が崩れません。調査日の「対応表CSV」で 1行1地点の比較表を出せます。</div>
       <ul id="session-list" class="session-list"></ul>
     </section>
 
@@ -177,6 +179,10 @@
       <label class="set-row">記録中に端末内蔵GNSSも取得して比較する
         <input id="set-devgnss" type="checkbox">
       </label>
+      <label class="set-row">生NMEA行もそのまま保存する
+        <input id="set-saveraw" type="checkbox">
+      </label>
+      <div class="note-dim">受信した NMEA 行を記録ごとに残します（1地点あたり 100〜150KB 程度）。後から RTKLIB などの別ツールで再解析したい場合に有効にしてください。</div>
       <label class="set-row">記録 最低収集時間 [秒]
         <input id="set-minsec" type="number" min="0" step="5">
       </label>

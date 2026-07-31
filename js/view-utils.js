@@ -95,19 +95,16 @@ function stopReasonText(reason) {
   return `自動停止: ${STOP_REASON[reason] || reason}`;
 }
 
-// 記録の既定地点名 "yyyy-mm-dd-xx"（xx=01からの同日連番）を生成する純粋関数。
-// labels: 既存セッションのラベル一覧。同日の "yyyy-mm-dd-数値" 形式のみ連番として数える。
-export function nextPointLabel(labels, now = new Date()) {
+// 時刻[ms] → ローカルの 'HH:MM:SS'（測定区間の表示用）
+export function localTime(ms) {
+  if (ms == null) return '—';
+  const d = new Date(ms);
   const p = (n) => String(n).padStart(2, '0');
-  const prefix = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}-`;
-  let max = 0;
-  for (const label of labels || []) {
-    if (typeof label !== 'string' || !label.startsWith(prefix)) continue;
-    const rest = label.slice(prefix.length);
-    if (/^\d+$/.test(rest)) max = Math.max(max, +rest);
-  }
-  return `${prefix}${p(max + 1)}`;
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
+
+// 割合(0〜1) → 百分率表示
+const pct = (v) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`);
 
 // 測定区間の受信品質（recorder.js が summary.rxStats に残す差分）→ 表示テキスト。
 // 「M10S→Pico / Pico→アプリ で取りこぼしなく処理できたか」を1回の記録単位で示す。
@@ -169,9 +166,54 @@ export function formatCompare(st, dst) {
   return lines.join('\n');
 }
 
-// 保存済みセッション → formatStats に渡す meta
+// 2系統（NMEA / Android）の測定区間と、その重なり（js/survey.js の window）。
+// 「同じ地点・同じ時間に取れているか」を保存後・取込後でも確認できるようにするブロック。
+export function formatWindow(window, summary) {
+  if (!window) return '';
+  const span = (w) =>
+    w ? `${localTime(w.startedAt)}–${localTime(w.endedAt)}（${w.durationSec.toFixed(0)} 秒 / ${w.count} 点）` : '取得なし';
+  const lines = [
+    '── 測定区間（地点の対応確認）──',
+    `NMEA(M10S): ${span(window.gnss)}` +
+      (summary?.rawLines != null ? `　生NMEA ${summary.rawLines} 行` : '　生NMEA 未保存'),
+    `Android   : ${span(window.device)}`,
+  ];
+  const ov = window.overlap;
+  if (ov) {
+    lines.push(
+      `重なり: ${ov.overlapSec.toFixed(0)} 秒` +
+        `（NMEA区間の ${pct(ov.coverGnss)} / Android区間の ${pct(ov.coverDevice)}）`
+    );
+    // OS が更新を間引くと Android は数点しか来ない。割合だけでは対応が判断できないため実数も出す。
+    if (ov.deviceTotal != null) {
+      lines.push(`Android のうち記録区間内: ${ov.deviceInRecording} / ${ov.deviceTotal} 点`);
+    }
+  }
+  if (window.clockOffsetMs != null) {
+    lines.push(
+      `端末時計 − GPS時刻: ${(window.clockOffsetMs / 1000).toFixed(1)} 秒` +
+        '（2系統を同じ時間軸へ並べ直すときの補正量）'
+    );
+  }
+  // Fused Location は数秒前に確定した fix を返すことがある。古いほど「同時刻の比較」から外れる。
+  if (window.deviceLagMs != null) {
+    lines.push(`Android の測位の古さ: ${(window.deviceLagMs / 1000).toFixed(1)} 秒（受信時刻 − 測位確定時刻）`);
+  }
+  if (summary?.rawTruncated) {
+    lines.push(`※生NMEAは上限に達したため ${summary.rawTruncated} 行を保存していません`);
+  }
+  return lines.join('\n');
+}
+
+// 保存済みセッション → formatStats / formatWindow に渡す meta
 export function sessionMeta(session) {
-  return { label: session.label, stopReason: session.summary?.stopReason, rxStats: session.summary?.rxStats };
+  return {
+    label: session.pointNo != null ? `${session.label}（No.${session.pointNo}）` : session.label,
+    stopReason: session.summary?.stopReason,
+    rxStats: session.summary?.rxStats,
+    window: session.window,
+    summary: session.summary,
+  };
 }
 
 // 記録一覧の副見出しテキスト
@@ -184,4 +226,17 @@ export function sessionSubText(session) {
     (s?.deviceDrms != null ? `（内蔵 ${s.deviceDrms.toFixed(2)}m）` : '') +
     (s?.lat != null ? `　(${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})` : '')
   );
+}
+
+// 記録一覧の2行目：2系統が揃っているかと生NMEAの有無（対応の確認をひと目で）
+export function pairingSubText(session) {
+  const s = session.summary;
+  const w = session.window;
+  const parts = [`NMEA ${s?.count ?? 0}点`];
+  parts.push(s?.rawLines != null ? `生${s.rawLines}行` : '生なし');
+  parts.push(`Android ${s?.deviceCount ?? 0}点`);
+  if (w?.overlap?.deviceTotal != null) {
+    parts.push(`区間内 ${w.overlap.deviceInRecording}/${w.overlap.deviceTotal}点`);
+  }
+  return parts.join(' / ');
 }

@@ -17,28 +17,15 @@ import { initConnectUI } from './connect-ui.js';
 import { initRecordUI } from './record-ui.js';
 import { initAnalysisUI } from './analysis-ui.js';
 import { initSettingsUI } from './settings-ui.js';
-
-// 設定の既定値（IndexedDB settings ストアに永続化）
-const DEFAULT_SETTINGS = {
-  uere: 5, // HDOP×UERE 概算用 [m]
-  maxSec: 60, // 記録の上限時間（タイムアウト）
-  maxEpochs: 120, // 記録の上限エポック数
-  autoStop: true, // 収束（中心・DRMS横ばい）による自動停止
-  minSec: 30, // 記録の最低収集時間
-  mapType: 'std',
-  trackEnabled: true,
-  deviceGnss: true, // 記録中に端末内蔵GNSSも取得して DRMS を比較する
-  saveRawNmea: true, // 記録中の生NMEA行もそのまま保存する（後から別ツールで再解析するため）
-};
+import { DEFAULT_SETTINGS } from './constants.js';
 
 async function main() {
   const storage = new Storage();
   await storage.init();
 
+  // 設定値は永続化しない。起動のたびに js/constants.js の既定値から始め、
+  // 設定タブでの変更はこの起動中だけ有効になる。
   const settings = { ...DEFAULT_SETTINGS };
-  for (const key of Object.keys(DEFAULT_SETTINGS)) {
-    settings[key] = await storage.getSetting(key, DEFAULT_SETTINGS[key]);
-  }
 
   const mapView = new MapView($('map'), {
     mapType: settings.mapType,
@@ -126,7 +113,7 @@ async function main() {
   });
   analysisUI = initAnalysisUI({ settings, getLatestEpoch: () => latestEpoch });
   mapUI = initMapUI({ mapView });
-  const settingsUI = initSettingsUI({ settings, storage, mapView, defaults: DEFAULT_SETTINGS });
+  const settingsUI = initSettingsUI({ settings, mapView });
   initTileUI({ tileCache: new TileCache(), storage, getMapType: () => settings.mapType });
   initConnectUI({
     streamStats,

@@ -3,7 +3,8 @@
 //   surveys:  1日の調査（id='yyyy-mm-dd'。ツリーの根。ラベル・メモを付けられる）
 //   sessions: 記録した地点のメタ（surveyId + pointNo で根に紐付く。window に2系統の測定区間）
 //   points:   地点の実データ（M10S の samples[]/rawNmea[] と Android の deviceSamples[] を同じ1レコードに持つ）
-//   settings: UERE・既定収集時間/点数・地図種別・軌跡 ON/OFF・生NMEA保存 など
+//   settings: 端末の状態のみ（tileCacheMeta = 事前DLしたタイルの版・種別・日時）。
+//             設定タブの値は永続化しない（既定値は js/constants.js）
 // 2系統を同じ point に入れるので、「どの NMEA とどの Android データが対" になるか」は
 // 構造上ずれない。時間が本当に重なっているかは session.window.overlap で検証する。
 import { assignSurveyKeys, surveyIdOf } from './survey.js';
@@ -201,6 +202,8 @@ export class Storage {
   }
 
   // ---- settings ----
+  // 設定タブの値ではなく、端末の状態（tileCacheMeta）の保存に使う。
+  // 設定値の既定は js/constants.js にあり、永続化しない。
   async getSetting(key, defaultValue = null) {
     const rec = await reqToPromise(this.db.transaction('settings').objectStore('settings').get(key));
     return rec ? rec.value : defaultValue;

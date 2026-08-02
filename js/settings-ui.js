@@ -1,9 +1,11 @@
 // 設定タブの配線：測位・記録パラメータ / 地図種別 / ライブ軌跡 ON-OFF と、
 // 「アプリのバージョン」（sw.js の APP_VERSION）の確認・更新。
-// 設定値は settings オブジェクトを直接書き換え、IndexedDB(settings) へ永続化する。
+// 設定値は settings オブジェクトを直接書き換えるだけで、永続化はしない。
+// 既定値は js/constants.js が唯一の出所で、リロードするとそこへ戻る。
 // 同じタブ内でも、タイル事前DL は tile-cache.js、モック配信は connect-ui.js、
 // Wake Lock 表示は record-ui.js が担当する（機能ごとにまとめる方針）。
 import { $ } from './view-utils.js';
+import { DEFAULT_SETTINGS } from './constants.js';
 
 // sw.js の版数 APP_VERSION（'yyyy-mm-dd.n' 形式）を読み取る
 const VERSION_RE = /APP_VERSION\s*=\s*'([^']+)'/;
@@ -20,7 +22,7 @@ function versionOrder(v) {
   return m ? +(m[1] + m[2] + m[3] + m[4].padStart(4, '0')) : 0;
 }
 
-export function initSettingsUI({ settings, storage, mapView, defaults }) {
+export function initSettingsUI({ settings, mapView }) {
   // ---- 設定行 ----
   // [入力要素 id, settings のキー, 入力値 → 保存値の変換] を1か所に集約する
   const NUMBER_ROWS = [
@@ -38,28 +40,25 @@ export function initSettingsUI({ settings, storage, mapView, defaults }) {
 
   for (const [id, key, normalize] of NUMBER_ROWS) {
     $(id).value = settings[key];
-    $(id).addEventListener('change', async (e) => {
-      settings[key] = normalize(+e.target.value, defaults[key]);
+    $(id).addEventListener('change', (e) => {
+      settings[key] = normalize(+e.target.value, DEFAULT_SETTINGS[key]);
       $(id).value = settings[key];
-      await storage.setSetting(key, settings[key]);
     });
   }
 
   for (const [id, key, apply] of CHECK_ROWS) {
     $(id).checked = settings[key];
-    $(id).addEventListener('change', async (e) => {
+    $(id).addEventListener('change', (e) => {
       settings[key] = e.target.checked;
       if (apply) apply(settings[key]);
-      await storage.setSetting(key, settings[key]);
     });
   }
 
   document.querySelector(`input[name="maptype"][value="${settings.mapType}"]`).checked = true;
   for (const radio of document.querySelectorAll('input[name="maptype"]')) {
-    radio.addEventListener('change', async (e) => {
+    radio.addEventListener('change', (e) => {
       settings.mapType = e.target.value;
       mapView.setBaseLayer(settings.mapType);
-      await storage.setSetting('mapType', settings.mapType);
     });
   }
 

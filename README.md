@@ -68,6 +68,7 @@ index.html / manifest.json / sw.js     アプリシェル・PWA・Service Worker
 css/style.css                          ダークUI（ステータスバー / ページ / タブバー）
 js/
   app.js             エントリ：受信パイプラインと各タブの結線のみ
+  constants.js       設定タブで扱う値の既定値（永続化しないため、ここが唯一の出所）
   view-utils.js      画面共通（DOM ショートハンド・タブ切替・表示フォーマッタ）
   ── 受信 ──
   transport.js       受信経路：BLE(NUS) 接続・自動再接続 ＋ 開発用モック配信
@@ -105,3 +106,9 @@ tools/check-syntax.mjs                 構文チェック＋純粋ロジック�
 
 この5文書が現行の仕様です（前身 gnss-tracker 時代の要件・設計、および個別機能ごとの実装仕様書は、
 内容を上記へ統合したうえで削除しました）。
+
+| 解説 | 内容 | 主な読者 |
+|---|---|---|
+| [docs/record-202607.md](docs/record-202607.md) | **記録タブ機能まとめ**（record → stop → save → load の流れを1枚に） | 記録機能を把握したい人 |
+
+解説は上記5文書から派生したもので、仕様の正本ではありません。

@@ -189,7 +189,7 @@
       <label class="set-row">記録 上限時間 [秒]（0=無制限・タイムアウト）
         <input id="set-maxsec" type="number" min="0" step="10">
       </label>
-      <div class="note-dim">未収束の環境では上限時間で停止します（0 だと収束するまで停止しません）。収束に余裕を見る場合は 300 秒など大きめに設定できます。</div>
+      <div class="note-dim">未収束の環境では上限時間で停止します（0 だと収束するまで停止しません）。既定の 180 秒は山間部など収束しにくい場所を想定した長さで、見通しの良い場所では収束した時点で早く停止します。</div>
       <label class="set-row">記録 収集エポック数（0=無制限）
         <input id="set-maxepochs" type="number" min="0" step="10">
       </label>

@@ -6,6 +6,7 @@ import { $, fmt, FIX_MODE, satsText, formatStats, formatCompare, formatWindow, s
 import { CONSTELLATION_COLORS, CONSTELLATION_LABELS } from './nmea.js';
 import { SkyPlotView, SnrChartView, ScatterPlotView } from './charts.js';
 import { estimateHorizontalAccuracy } from './accuracy.js';
+import { SERIES } from './constants.js';
 
 const DOP_KEYS = ['pdop', 'hdop', 'vdop'];
 
@@ -38,7 +39,7 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
   let source = 'live';
   let loaded = null; // { session, point }
   let liveStats = null; // 記録中/直近の記録の集計（ライブ表示時の DRMS）
-  let liveDeviceStats = null; // 同区間の端末内蔵GNSS の集計（比較用。無ければ null）
+  let liveDeviceStats = null; // 同区間の Android内蔵GNSS の集計（比較用。無ければ null）
   let index = 0; // 読込データのエポック位置
 
   // 凡例（コンステレーション色）
@@ -46,6 +47,11 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     .filter(([id]) => id !== 'unknown' && id !== 'mixed')
     .map(([id, label]) => `<span><i class="swatch" style="background:${CONSTELLATION_COLORS[id]}"></i>${label}</span>`)
     .join('');
+
+  // 散布図の系統凡例。記録タブと同じく、塗り＝GNSS受信機 / 中抜き＝Android内蔵
+  $('an-scatter-legend').innerHTML =
+    `<span><i class="swatch" style="background:${SERIES.gnss.color}"></i>${SERIES.gnss.label}</span>` +
+    `<span><i class="swatch hollow" style="border-color:${SERIES.device.color}"></i>${SERIES.device.label}</span>`;
 
   const samples = () => loaded?.point?.samples || [];
 
@@ -94,7 +100,7 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     for (const id of ['an-mode', 'an-sats', 'an-accsrc', 'an-gst', 'an-sys']) $(id).textContent = '—';
   }
 
-  // DRMS（散布図＋集計テキスト）。同区間の端末内蔵GNSS があれば重ねて比較する（仕様 5-4）。
+  // DRMS（散布図＋集計テキスト）。同区間の Android内蔵GNSS があれば重ねて比較する（仕様 5-4）。
   function renderDrms() {
     const st = source === 'loaded' ? loaded?.point?.stats : liveStats;
     const dst = source === 'loaded' ? loaded?.point?.deviceStats || null : liveDeviceStats;
@@ -103,7 +109,8 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     const cmp = st && dst && $('an-cmp').checked ? dst : null;
     $('an-scatter-legend').hidden = !cmp;
 
-    scatterView.update(st, cmp);
+    const outside = scatterView.update(st, cmp);
+    renderOutside(outside);
     if (st) {
       const meta = source === 'loaded' ? sessionMeta(loaded.session) : { label: '記録中/直近の記録' };
       // 読込データでは 2系統の測定区間（対応の検証）も出す
@@ -117,6 +124,16 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
           ? '読込データに集計値がありません'
           : '記録（record）を開始するか、保存済みの記録を読み込むと表示されます';
     }
+  }
+
+  // 表示半径の外に出た点（散布図では縁に▲で描かれている）。記録タブと同じ表記。
+  function renderOutside(outside) {
+    const parts = [];
+    if (outside?.gnss) parts.push(`${SERIES.gnss.label} ${outside.gnss}点`);
+    if (outside?.device) parts.push(`${SERIES.device.label} ${outside.device}点`);
+    const el = $('an-outside');
+    el.hidden = !parts.length;
+    el.textContent = parts.length ? `表示範囲の外側に ${parts.join(' / ')}（▲は方向）` : '';
   }
 
   // 読込データのエポック位置表示
@@ -150,6 +167,7 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
   for (const radio of document.querySelectorAll('input[name="ansrc"]')) {
     radio.addEventListener('change', (e) => {
       source = e.target.value;
+      scatterView.resetScale(); // 別のデータへ切り替えるので前のスケールを引きずらない
       refresh();
     });
   }
@@ -181,6 +199,7 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
   function setLoaded(entry) {
     loaded = entry;
     index = 0;
+    scatterView.resetScale();
     const loadedRadio = document.querySelector('input[name="ansrc"][value="loaded"]');
     loadedRadio.disabled = !entry;
     if (entry) {

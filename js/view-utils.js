@@ -1,7 +1,12 @@
 // 画面共通ユーティリティ：DOM 取得ショートハンド・タブ切替・値→表示文字列の変換。
 // DOM に触るのは $ と initTabUI のみで、他は純粋関数（Node からテストできる）。
+// 2系統の表示名は js/constants.js の SERIES が唯一の出所（機種名は画面に出さない）。
+import { SERIES } from './constants.js';
 
 export const $ = (id) => document.getElementById(id);
+
+const GNSS = SERIES.gnss.label;
+const DEVICE = SERIES.device.label;
 
 // ---- タブ切替 ----
 // 下部タブバー ↔ ページ（.page）の排他表示。非表示中は canvas / 地図のサイズが
@@ -81,18 +86,29 @@ export function fixBadge(epoch) {
 // ---- 記録の表示 ----
 
 // 記録の停止理由 → 表示ラベル
-const STOP_REASON = {
-  converged: '収束（中心・DRMS横ばい）',
-  timeout: '上限時間到達（未収束）',
-  maxEpochs: '上限エポック到達',
+const STOP_LABEL = {
+  converged: '収束で自動停止',
+  timeout: '上限時間で停止',
+  maxEpochs: '上限エポックで停止',
   manual: '手動停止',
+  interrupted: '中断で停止', // 画面OFF・他アプリへの切替が猶予を超えた
 };
 
-// 停止理由の表示行（stopReason 無しの旧データは空 = manual 相当にフォールバック）
-function stopReasonText(reason) {
-  if (!reason) return '';
-  if (reason === 'manual') return STOP_REASON.manual;
-  return `自動停止: ${STOP_REASON[reason] || reason}`;
+// 停止サマリ（記録タブの1行目。詳細は ▶ の中）。仕様 2・3。
+// 例) 収束で自動停止（45秒/45点）
+//     上限時間で停止（未収束: 180秒/180点）
+//     手動停止（収束判定なし: 20秒/20点）  ※自動停止 OFF のときは「未収束」ではない
+//     測位データなしで停止（30秒/0点）
+// 秒数と点数を併記するのは、1Hz なら本来一致するはずの2つがずれていれば
+// 取りこぼし（BLE 欠落・中断）があったと分かるため。
+export function stopSummaryText({ stopReason, durationSec, count, autoStop }) {
+  const span = `${Math.round(durationSec || 0)}秒/${count || 0}点`;
+  if (!count) return `測位データなしで停止（${span}）`;
+  const head = STOP_LABEL[stopReason] || STOP_LABEL.manual;
+  // 収束停止以外は収束していない。自動停止 OFF なら「判定していない」と書き分ける
+  // （autoStop を持たない旧データは、判定していた前提で「未収束」に寄せる）。
+  const note = stopReason === 'converged' ? '' : autoStop === false ? '収束判定なし: ' : '未収束: ';
+  return `${head}（${note}${span}）`;
 }
 
 // 時刻[ms] → ローカルの 'HH:MM:SS'（測定区間の表示用）
@@ -107,7 +123,7 @@ export function localTime(ms) {
 const pct = (v) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`);
 
 // 測定区間の受信品質（recorder.js が summary.rxStats に残す差分）→ 表示テキスト。
-// 「M10S→Pico / Pico→アプリ で取りこぼしなく処理できたか」を1回の記録単位で示す。
+// 「受信機→Pico / Pico→アプリ で取りこぼしなく処理できたか」を1回の記録単位で示す。
 function rxStatsText(rx) {
   if (!rx) return '';
   const picoLine = rx.pico
@@ -121,14 +137,14 @@ function rxStatsText(rx) {
 }
 
 // 記録の集計テキスト（記録タブの結果パネル・解析タブの DRMS 表示用）。
-// meta: { label, stopReason, rxStats } — 保存済みセッションでも未保存の記録でも渡せる形にする。
+// meta: { label, rxStats } — 保存済みセッションでも未保存の記録でも渡せる形にする。
+// 停止理由はここには入れない。記録タブでは折りたたみの見出し（stopSummaryText）が
+// 担当し、二重に出ないようにしている（仕様 3）。
 export function formatStats(meta, st) {
   if (!st) return '有効なエポックが収集できませんでした';
   const fixLine = Object.entries(st.fixCounts).map(([q, n]) => `fix${q}:${n}`).join(' ');
-  const reasonLine = stopReasonText(meta?.stopReason);
   const rxText = rxStatsText(meta?.rxStats);
   return [
-    ...(reasonLine ? [reasonLine] : []),
     `【${meta?.label || '未保存の記録'}】 収集 ${st.count} エポック`,
     `中心: ${st.center.lat.toFixed(7)}, ${st.center.lon.toFixed(7)}（中央値: ${st.median.lat.toFixed(7)}, ${st.median.lon.toFixed(7)}）`,
     `標準偏差: 東西 ${st.stdEastM.toFixed(2)} m / 南北 ${st.stdNorthM.toFixed(2)} m`,
@@ -141,32 +157,32 @@ export function formatStats(meta, st) {
   ].join('\n');
 }
 
-// 端末内蔵GNSS との比較ブロック（DRMS 表示に formatStats の後ろへ付ける。仕様 5-4）。
-// st: M10S の集計 / dst: computeDeviceStats の戻り値。
+// Android内蔵GNSS との比較ブロック（DRMS 表示に formatStats の後ろへ付ける。仕様 5-4）。
+// st: GNSS受信機の集計 / dst: computeDeviceStats の戻り値。
 // accuracy は 68% 円半径で DRMS（1σ相当）とは定義が違うため、同じ行に並べず参考値として置く。
 export function formatCompare(st, dst) {
   if (!st || !dst) return '';
   const ratio = st.drms > 0 && dst.drms != null ? `（${(dst.drms / st.drms).toFixed(1)}倍）` : '';
   const off = dst.offsetFromRef;
   const lines = [
-    `── 比較: 端末内蔵GNSS（同時取得 ${dst.count} 点 / 座標重複 ${dst.dupCount} 点）──`,
-    `DRMS: M10S ${st.drms.toFixed(2)} m / 内蔵 ${fmt(dst.drms, 2)} m${ratio}`,
-    `CEP50: M10S ${fmt(st.cep50, 2)} m / 内蔵 ${fmt(dst.cep50, 2)} m`,
-    `CEP95: M10S ${fmt(st.cep95, 2)} m / 内蔵 ${fmt(dst.cep95, 2)} m`,
-    `標準偏差(東西/南北): M10S ${st.stdEastM.toFixed(2)}/${st.stdNorthM.toFixed(2)} m / ` +
-      `内蔵 ${fmt(dst.stdEastM, 2)}/${fmt(dst.stdNorthM, 2)} m`,
-    `中心のズレ: ${fmt(off?.distM, 2)} m（${bearingText(off?.bearingDeg)}）※M10S 中心からの相対。真の誤差ではない`,
-    `内蔵の平均 accuracy: ${fmt(dst.avgAccuracy, 1)} m（68%円半径。DRMS とは定義が異なる参考値）`,
+    `── 比較: ${DEVICE}（同時取得 ${dst.count} 点 / 座標重複 ${dst.dupCount} 点）──`,
+    `DRMS: ${GNSS} ${st.drms.toFixed(2)} m / ${DEVICE} ${fmt(dst.drms, 2)} m${ratio}`,
+    `CEP50: ${GNSS} ${fmt(st.cep50, 2)} m / ${DEVICE} ${fmt(dst.cep50, 2)} m`,
+    `CEP95: ${GNSS} ${fmt(st.cep95, 2)} m / ${DEVICE} ${fmt(dst.cep95, 2)} m`,
+    `標準偏差(東西/南北): ${GNSS} ${st.stdEastM.toFixed(2)}/${st.stdNorthM.toFixed(2)} m / ` +
+      `${DEVICE} ${fmt(dst.stdEastM, 2)}/${fmt(dst.stdNorthM, 2)} m`,
+    `中心のズレ: ${fmt(off?.distM, 2)} m（${bearingText(off?.bearingDeg)}）※${GNSS}の中心からの相対。真の誤差ではない`,
+    `${DEVICE}の平均 accuracy: ${fmt(dst.avgAccuracy, 1)} m（68%円半径。DRMS とは定義が異なる参考値）`,
   ];
   // 静止中は OS が更新を間引くことがあり、重複が多いとばらつきが過小評価される
   if (dst.count > 0 && dst.dupCount / dst.count >= 0.3) {
-    lines.push('※同じ座標の繰り返しが多く、内蔵のばらつきを過小評価している可能性があります');
+    lines.push(`※同じ座標の繰り返しが多く、${DEVICE}のばらつきを過小評価している可能性があります`);
   }
-  lines.push('※内蔵は WiFi/基地局を融合した測位（Fused Location）で、GNSS 単独の性能ではありません');
+  lines.push(`※${DEVICE}は WiFi/基地局を融合した測位（Fused Location）で、GNSS 単独の性能ではありません`);
   return lines.join('\n');
 }
 
-// 2系統（NMEA / Android）の測定区間と、その重なり（js/survey.js の window）。
+// 2系統の測定区間と、その重なり（js/survey.js の window）。
 // 「同じ地点・同じ時間に取れているか」を保存後・取込後でも確認できるようにするブロック。
 export function formatWindow(window, summary) {
   if (!window) return '';
@@ -174,9 +190,9 @@ export function formatWindow(window, summary) {
     w ? `${localTime(w.startedAt)}–${localTime(w.endedAt)}（${w.durationSec.toFixed(0)} 秒 / ${w.count} 点）` : '取得なし';
   const lines = [
     '── 測定区間（地点の対応確認）──',
-    `NMEA(M10S): ${span(window.gnss)}` +
+    `${GNSS}: ${span(window.gnss)}` +
       (summary?.rawLines != null ? `　生NMEA ${summary.rawLines} 行` : '　生NMEA 未保存'),
-    `Android   : ${span(window.device)}`,
+    `${DEVICE}: ${span(window.device)}`,
   ];
   const ov = window.overlap;
   if (ov) {
@@ -184,9 +200,9 @@ export function formatWindow(window, summary) {
       `重なり: ${ov.overlapSec.toFixed(0)} 秒` +
         `（NMEA区間の ${pct(ov.coverGnss)} / Android区間の ${pct(ov.coverDevice)}）`
     );
-    // OS が更新を間引くと Android は数点しか来ない。割合だけでは対応が判断できないため実数も出す。
+    // OS が更新を間引くと内蔵は数点しか来ない。割合だけでは対応が判断できないため実数も出す。
     if (ov.deviceTotal != null) {
-      lines.push(`Android のうち記録区間内: ${ov.deviceInRecording} / ${ov.deviceTotal} 点`);
+      lines.push(`${DEVICE}のうち記録区間内: ${ov.deviceInRecording} / ${ov.deviceTotal} 点`);
     }
   }
   if (window.clockOffsetMs != null) {
@@ -197,7 +213,7 @@ export function formatWindow(window, summary) {
   }
   // Fused Location は数秒前に確定した fix を返すことがある。古いほど「同時刻の比較」から外れる。
   if (window.deviceLagMs != null) {
-    lines.push(`Android の測位の古さ: ${(window.deviceLagMs / 1000).toFixed(1)} 秒（受信時刻 − 測位確定時刻）`);
+    lines.push(`${DEVICE}の測位の古さ: ${(window.deviceLagMs / 1000).toFixed(1)} 秒（受信時刻 − 測位確定時刻）`);
   }
   if (summary?.rawTruncated) {
     lines.push(`※生NMEAは上限に達したため ${summary.rawTruncated} 行を保存していません`);
@@ -205,11 +221,14 @@ export function formatWindow(window, summary) {
   return lines.join('\n');
 }
 
-// 保存済みセッション → formatStats / formatWindow に渡す meta
+// 保存済みセッション → formatStats / formatWindow / stopSummaryText に渡す meta
 export function sessionMeta(session) {
   return {
     label: session.pointNo != null ? `${session.label}（No.${session.pointNo}）` : session.label,
     stopReason: session.summary?.stopReason,
+    autoStop: session.summary?.autoStop,
+    durationSec: session.window?.durationSec,
+    count: session.summary?.count ?? 0,
     rxStats: session.summary?.rxStats,
     window: session.window,
     summary: session.summary,
@@ -223,7 +242,7 @@ export function sessionSubText(session) {
   return (
     `${when}　${s?.count ?? 0}点` +
     (s?.drms != null ? `　DRMS ${s.drms.toFixed(2)}m` : '') +
-    (s?.deviceDrms != null ? `（内蔵 ${s.deviceDrms.toFixed(2)}m）` : '') +
+    (s?.deviceDrms != null ? `（${DEVICE} ${s.deviceDrms.toFixed(2)}m）` : '') +
     (s?.lat != null ? `　(${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})` : '')
   );
 }
@@ -232,9 +251,9 @@ export function sessionSubText(session) {
 export function pairingSubText(session) {
   const s = session.summary;
   const w = session.window;
-  const parts = [`NMEA ${s?.count ?? 0}点`];
-  parts.push(s?.rawLines != null ? `生${s.rawLines}行` : '生なし');
-  parts.push(`Android ${s?.deviceCount ?? 0}点`);
+  const parts = [`${GNSS} ${s?.count ?? 0}点`];
+  parts.push(s?.rawLines != null ? `生NMEA ${s.rawLines}行` : '生NMEAなし');
+  parts.push(`${DEVICE} ${s?.deviceCount ?? 0}点`);
   if (w?.overlap?.deviceTotal != null) {
     parts.push(`区間内 ${w.overlap.deviceInRecording}/${w.overlap.deviceTotal}点`);
   }

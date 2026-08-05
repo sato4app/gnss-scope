@@ -8,6 +8,7 @@
 import { escapeMarkup } from './view-utils.js';
 import { computeStaticStats, computeDeviceStats } from './accuracy.js';
 import { nextPointNo, surveyIdOf } from './survey.js';
+import { SERIES } from './constants.js';
 
 const JSON_FORMAT = 1; // 地点単体
 const BUNDLE_FORMAT = 2; // 調査日バンドル
@@ -101,11 +102,11 @@ export function exportCSV(session, point) {
     }
   }
 
-  // 端末内蔵GNSS の比較値もコメント行に付ける（レートが違うため行としては混ぜない）
+  // Android内蔵GNSS の比較値もコメント行に付ける（レートが違うため行としては混ぜない）
   const dst = point?.deviceStats;
   if (dst) {
     lines.push('');
-    lines.push('# 比較: 端末内蔵GNSS（同時取得）');
+    lines.push(`# 比較: ${SERIES.device.label}（同時取得）`);
     for (const [key, value] of [
       ['device_epochs', dst.count],
       ['device_center_lat', dst.center.lat], ['device_center_lon', dst.center.lon],
@@ -181,7 +182,7 @@ export function exportJSON(session, point) {
 }
 
 // ---- 調査日バンドル JSON（その日の全地点を1ファイルに） ----
-// point を丸ごと入れるので、生NMEA・生エポック・Android の測位が地点ごとに揃ったまま出る。
+// point を丸ごと入れるので、生NMEA・生エポック・Android内蔵の測位が地点ごとに揃ったまま出る。
 export function exportSurveyJSON(survey, entries) {
   const data = {
     app: 'gnss-scope',
@@ -194,8 +195,9 @@ export function exportSurveyJSON(survey, entries) {
 }
 
 // ---- 調査日の対応表 CSV（1行1地点） ----
-// 「20地点まわった結果、地点ごとに M10S と Android がどう違ったか」を1枚の表にする。
+// 「20地点まわった結果、地点ごとに GNSS受信機と Android内蔵がどう違ったか」を1枚の表にする。
 // これが2系統比較の入口で、地点の対応は survey_id + point_no で辿る。
+// 列名の接頭辞 gnss_ / dev_ は系統を表す（機種名は入れない）。
 export const COMPARE_HEADER = [
   'survey_id', 'point_no', 'label', 'memo',
   'started_at_local', 'ended_at_local', 'duration_s', 'stop_reason',
@@ -270,10 +272,13 @@ export function exportSurveyCompareCSV(survey, entries) {
   lines.push(`# label,${csvCell(survey.label || survey.id)}`);
   lines.push(`# memo,${csvCell(survey.memo || '')}`);
   lines.push(`# points,${rows.length}`);
-  lines.push('# cover_gnss_pct: M10S の測定区間のうち Android も取れていた割合');
-  lines.push('# dev_in_record_window: Android のサンプルのうち record→stop の記録区間内にあった点数');
+  const gnss = SERIES.gnss.label;
+  const dev = SERIES.device.label;
+  lines.push(`# gnss_*: ${gnss} / dev_*: ${dev}`);
+  lines.push(`# cover_gnss_pct: ${gnss}の測定区間のうち ${dev} も取れていた割合`);
+  lines.push(`# dev_in_record_window: ${dev}のサンプルのうち record→stop の記録区間内にあった点数`);
   lines.push('# clock_offset_ms: 端末時計 − GPS時刻（2系統を同じ時間軸へ並べ直すときの補正量）');
-  lines.push('# dev_fix_lag_ms: Android の 受信時刻 − 測位確定時刻（大きいほど古い fix を返している）');
+  lines.push(`# dev_fix_lag_ms: ${dev}の 受信時刻 − 測位確定時刻（大きいほど古い fix を返している）`);
   download(`${safeName(survey.label || survey.id)}_compare.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
 }
 
@@ -308,7 +313,7 @@ async function importOne(src, survey, storage) {
   // 調査日と地点番号まで含めた id（同じミリ秒に別の調査日の地点を取り込んでも衝突しない）
   const id = `imp_${Date.now()}_${surveyId}_${pointNo}`;
   const stats = src.point.stats || computeStaticStats(src.point.samples); // 集計欠落なら再計算
-  // 端末内蔵GNSS の比較データ（無い JSON も読めるよう任意扱い）
+  // Android内蔵GNSS の比較データ（無い JSON も読めるよう任意扱い）
   const deviceSamples = Array.isArray(src.point.deviceSamples) ? src.point.deviceSamples : null;
   const deviceStats = deviceSamples?.length
     ? src.point.deviceStats || computeDeviceStats(deviceSamples, stats?.center || null)

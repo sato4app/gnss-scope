@@ -39,7 +39,7 @@ async function main() {
   let analysisUI = null;
   let mapUI = null;
 
-  // 記録中だけ動かす端末内蔵GNSS（DRMS の比較対象。仕様 4-8）
+  // 記録中だけ動かす Android内蔵GNSS（DRMS の比較対象。仕様 4-8）
   const deviceGnss = new DeviceGnss({
     onSample: (sample) => recorder.addDeviceSample(sample),
     onStatus: (status) => recordUI?.onDeviceStatus(status),
@@ -146,10 +146,28 @@ async function main() {
     },
   });
 
-  // 画面 OFF / バックグラウンド → 記録一時停止（仕様 3-7）
+  // 画面 OFF / 他アプリへの切替 → 猶予を過ぎたら記録を中断して停止する（仕様 3-7）。
+  // 画面が消えると BLE が切れてデータが届かなくなるため、そのまま続けると
+  // 穴の空いた区間が1地点として残る。復帰後は続きではなく別の地点として測り直す。
+  // 猶予を置くのは、地図アプリを一瞬見る・写真を撮るといった短い離脱で
+  // 記録が毎回やり直しになるのを避けるため（document.hidden は画面OFF以外でも立つ）。
+  const HIDDEN_GRACE_MS = 5000;
+  let hiddenTimer = null;
   document.addEventListener('visibilitychange', () => {
-    recorder.setPaused(document.hidden);
-    if (!document.hidden && tabUI.current === 'map') mapView.invalidateSize();
+    if (document.hidden) {
+      if (recorder.isRecording && hiddenTimer == null) {
+        hiddenTimer = setTimeout(() => {
+          hiddenTimer = null;
+          if (recorder.isRecording) recorder.stop('interrupted');
+        }, HIDDEN_GRACE_MS);
+      }
+      return;
+    }
+    if (hiddenTimer != null) {
+      clearTimeout(hiddenTimer); // 猶予内に戻ってきたので記録を続ける
+      hiddenTimer = null;
+    }
+    if (tabUI.current === 'map') mapView.invalidateSize();
   });
 
   if ('serviceWorker' in navigator) {

@@ -6,6 +6,7 @@
 // 十字・リング・方位ラベルの描画は下の共通ヘルパに集約している。
 // 外に出すのは3つのビューと holdDecision（テスト用）のみ。
 import { CONSTELLATION_COLORS } from './nmea.js';
+import { SERIES } from './constants.js';
 
 // 衛星データが来ない間、直前フレームを保持する上限 [ms]。超過でクリア（sky/snr 共通）
 const HOLD_MS = 8000;
@@ -13,10 +14,6 @@ const HOLD_MS = 8000;
 const GRID_COLOR = 'rgba(255,255,255,0.12)';
 const LABEL_COLOR = 'rgba(255,255,255,0.45)';
 const MONO = (px) => `${px}px ui-monospace, monospace`;
-
-// 散布図の比較系列（端末内蔵GNSS）の色。M10S の橙と混ざらない色にする。
-const DEVICE_COLOR = '#b98cff';
-const DEVICE_POINT_COLOR = 'rgba(185,140,255,0.6)';
 
 // キャリーフォワード判定（純粋関数）。
 // hasSats: 今回のエポックに描画可能な衛星データがあるか
@@ -283,6 +280,20 @@ export class SnrChartView extends CanvasView {
 
 // ---- 散布図 ----
 // 記録の中心からの東西(E)×南北(N)オフセット [m]。CEP50 / DRMS の円も重ねる。
+//
+// 表示半径（仕様 5）:
+//   R = max(2m, GNSS受信機DRMS×4, Android内蔵DRMS×2) を 1/2/5×10^n に切り上げる。
+//   両系統の「最大半径」で決めると、内蔵の外れ点1つで受信機の点群が中心の数ピクセルへ
+//   潰れてしまうため、外れ値に強い DRMS を基準にする。
+//   記録開始直後は DRMS≒0 なので下限 2m を置き、さらにヒステリシス（目標が現在の
+//   半分を下回るまで縮小しない）で毎秒スケールが動くのを防ぐ。
+//   R の外に出た点は縁に▲でクランプし、系統別の件数を outside に残す
+//   （「外側にn点」を出しつつ、どちらへ飛んだかの方向も捨てない）。
+// 内蔵の点は中抜きで描く。色だけに頼ると直射日光下・色覚特性で区別が付かないため。
+
+const SCATTER_MIN_RADIUS_M = 2; // 表示半径の下限 [m]
+const GNSS_DRMS_FACTOR = 4; // GNSS受信機 DRMS の何倍まで入れるか
+const DEVICE_DRMS_FACTOR = 2; // Android内蔵 DRMS の何倍まで入れるか
 
 export class ScatterPlotView extends CanvasView {
   _computeSize() {
@@ -292,57 +303,68 @@ export class ScatterPlotView extends CanvasView {
   clear() {
     this._last = null;
     this._lastDevice = null;
+    this.outside = { gnss: 0, device: 0 };
+    this.resetScale();
     this.ctx.clearRect(0, 0, this.w, this.h);
   }
 
+  // 表示半径のヒステリシスを解除する。別の記録へ切り替えるときに呼ぶ
+  // （前の記録のスケールを引きずらないため）。
+  resetScale() {
+    this._radiusM = null;
+  }
+
   // stats:       computeStaticStats の戻り値（offsets / cep50 / drms を使用）
-  // deviceStats: 端末内蔵GNSS の比較系列（computeDeviceStats）。null で比較なし。
+  // deviceStats: Android内蔵GNSS の比較系列（computeDeviceStats）。null で比較なし。
   //   既定値を保持中の系列にしているのは、基底クラスのリサイズ再描画が
   //   update(this._last) と1引数で呼ぶため（明示的に null を渡せば消える）。
+  // 戻り値: 表示範囲の外に出た点数 { gnss, device }（凡例の「外側にn点」用）
   update(stats, deviceStats = this._lastDevice) {
     this._last = stats;
     this._lastDevice = deviceStats || null;
+    this.outside = { gnss: 0, device: 0 };
     this._syncSize();
     const ctx = this.ctx;
     const S = this.w;
     const cx = S / 2;
     const cy = S / 2;
     ctx.clearRect(0, 0, S, S);
-    if (!stats || !stats.offsets?.length) return;
+    if (!stats || !stats.offsets?.length) return this.outside;
 
-    // 比較系列は M10S の中心を共通原点にして重ねる（ばらつきに加えて中心のズレも見える）
+    // 比較系列は GNSS受信機の中心を共通原点にして重ねる（ばらつきに加えて中心のズレも見える）
     const dev = this._lastDevice?.offsets?.length ? this._lastDevice : null;
     const dE = dev?.offsetFromRef?.e || 0;
     const dN = dev?.offsetFromRef?.n || 0;
     const devPts = dev ? dev.offsets.map((o) => ({ e: o.e + dE, n: o.n + dN })) : [];
 
-    // スケール：最大半径か CEP95 の大きい方が収まるように（最低 1 m）
-    const radii = stats.offsets.map((o) => Math.hypot(o.e, o.n));
-    for (const o of devPts) radii.push(Math.hypot(o.e, o.n));
-    const maxR = Math.max(1, stats.cep95 || 0, ...radii);
+    const maxR = this._radiusFor(stats, dev);
+    // 内蔵の中心そのものが枠外なら、中心マーカーと DRMS 円は描かない（点は▲で縁に出る）
+    const devCenterInside = dev && Math.hypot(dE, dN) <= maxR;
     const R = S / 2 - 24;
     const scale = R / maxR;
 
     drawCross(ctx, cx, cy, S / 2 - 8);
 
-    // 目盛りリング（キリのいい間隔）
+    // 目盛りリング（キリのいい間隔）。表示半径 maxR より外には描かない
+    // （maxR は範囲外の点をクランプする境界なので、その外にリングがあると誤解を招く）
     const step = niceStep(maxR);
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
     ctx.font = MONO(10);
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
-    for (let r = step; r <= maxR + step / 2; r += step) {
+    for (let r = step; r <= maxR + 1e-9; r += step) {
       strokeCircle(ctx, cx, cy, r * scale);
       ctx.fillText(fmtM(r), cx + r * scale * 0.7071 + 2, cy - r * scale * 0.7071 - 2);
     }
 
-    // 比較系列（背面に描いて M10S を前に出す）
+    // 比較系列（背面に描いて GNSS受信機を前に出す）
     if (dev) {
-      for (const o of devPts) {
-        fillCircle(ctx, cx + o.e * scale, cy - o.n * scale, 2.5, DEVICE_POINT_COLOR);
+      this.outside.device = this._drawPoints(devPts, cx, cy, scale, maxR, SERIES.device, false);
+      if (devCenterInside) {
+        // 目盛りラベル（右上）と GNSS受信機の円（左下 / 右下）を避けて左上に置く
+        const label = 'DRMS'; // ラベルは種別、色が系統を表す
+        drawStatCircle(ctx, cx + dE * scale, cy - dN * scale, dev.drms, scale, SERIES.device.color, label, { x: -1, y: -1 });
       }
-      // 目盛りラベル（右上）と M10S（左下 / 右下）を避けて左上に置く
-      drawStatCircle(ctx, cx + dE * scale, cy - dN * scale, dev.drms, scale, DEVICE_COLOR, '内蔵', { x: -1, y: -1 });
     }
 
     // CEP50（緑）と DRMS（青）の円
@@ -350,18 +372,75 @@ export class ScatterPlotView extends CanvasView {
     drawStatCircle(ctx, cx, cy, stats.drms, scale, '#4f9dff', 'DRMS', { x: 1, y: 1 });
 
     // 各点と中心
-    for (const o of stats.offsets) {
-      fillCircle(ctx, cx + o.e * scale, cy - o.n * scale, 2.5, 'rgba(240,169,58,0.75)');
-    }
-    if (dev) fillCircle(ctx, cx + dE * scale, cy - dN * scale, 3, DEVICE_COLOR);
+    this.outside.gnss = this._drawPoints(stats.offsets, cx, cy, scale, maxR, SERIES.gnss, true);
+    if (devCenterInside) fillCircle(ctx, cx + dE * scale, cy - dN * scale, 3, SERIES.device.color);
     fillCircle(ctx, cx, cy, 3, '#ffffff');
 
     drawCompass(ctx, cx, cy, S / 2 - 14, 10);
+    return this.outside;
+  }
+
+  // 表示半径 [m]。ヒステリシス付き（記録中に毎秒スケールが動くのを防ぐ）。
+  _radiusFor(stats, dev) {
+    const target = Math.max(
+      SCATTER_MIN_RADIUS_M,
+      (stats?.drms || 0) * GNSS_DRMS_FACTOR,
+      (dev?.drms || 0) * DEVICE_DRMS_FACTOR
+    );
+    // 拡大は即座に、縮小は目標が現在の半分を下回るまで待つ
+    if (this._radiusM == null || target > this._radiusM || target < this._radiusM / 2) {
+      this._radiusM = niceCeil(target);
+    }
+    return this._radiusM;
+  }
+
+  // 1系統ぶんの点を描く。範囲外は縁に▲でクランプし、その件数を返す。
+  // filled=false（Android内蔵）は中抜き。塗りより見えにくいぶん半径を大きくする。
+  _drawPoints(points, cx, cy, scale, maxR, series, filled) {
+    const ctx = this.ctx;
+    let outside = 0;
+    for (const o of points) {
+      if (Math.hypot(o.e, o.n) > maxR) {
+        outside++;
+        drawOutMarker(ctx, cx, cy, Math.atan2(o.e, o.n), maxR * scale, series.color);
+        continue;
+      }
+      const x = cx + o.e * scale;
+      const y = cy - o.n * scale;
+      if (filled) {
+        fillCircle(ctx, x, y, 2.5, series.point);
+      } else {
+        ctx.strokeStyle = series.point;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    return outside;
   }
 }
 
+// 表示範囲の外に出た点。縁に寄せて外向きの▲で描く（件数だけでなく方向も残す）。
+// angleRad は 0=北・時計回り（散布図の方位と同じ向き）。
+function drawOutMarker(ctx, cx, cy, angleRad, rPix, color) {
+  const size = 4;
+  ctx.save();
+  ctx.translate(cx + rPix * Math.sin(angleRad), cy - rPix * Math.cos(angleRad));
+  ctx.rotate(angleRad); // 回転前の上向き（-y）が外向きになる
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, -size);
+  ctx.lineTo(size * 0.8, size * 0.7);
+  ctx.lineTo(-size * 0.8, size * 0.7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 // 統計円（破線）＋ラベル。dir はラベルを置く象限の単位ベクトル（canvas 座標なので y>0 が下）。
-// 比較系列を重ねると M10S 側の円が相対的に小さくなり、同じ向きだとラベルが中心で潰れるため、
+// 比較系列を重ねると受信機側の円が相対的に小さくなり、同じ向きだとラベルが中心で潰れるため、
 // 系列ごとに向きを変え、かつ中心から最低 10 px は離す。
 function drawStatCircle(ctx, cx, cy, r, scale, color, label, dir = { x: 1, y: 1 }) {
   if (r == null || !(r > 0)) return;
@@ -375,6 +454,20 @@ function drawStatCircle(ctx, cx, cy, r, scale, color, label, dir = { x: 1, y: 1 
   ctx.textBaseline = dir.y > 0 ? 'top' : 'bottom';
   const d = Math.max(r * scale * 0.7071, 10) + 2;
   ctx.fillText(label, cx + dir.x * d, cy + dir.y * d);
+}
+
+// 表示半径の段階。目盛りの 1/2/5 より細かく刻む。
+// 粗いと DRMS が少し増えただけで半径が倍になり（例 4×1.27=5.08m → 10m）、
+// 点群が中心の小さな塊に見えてしまう。この刻みなら行き過ぎは最大 1.5 倍に収まる。
+const RADIUS_STEPS = [1, 1.5, 2, 3, 4, 5, 6, 8];
+
+// 表示半径を RADIUS_STEPS×10^n の段階へ切り上げる（段階を刻むことでスケールのばたつきを抑える）
+function niceCeil(v) {
+  if (!(v > 0)) return SCATTER_MIN_RADIUS_M;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v / pow;
+  const m = RADIUS_STEPS.find((s) => n <= s * (1 + 1e-9)) ?? 10;
+  return m * pow;
 }
 
 // 目盛り間隔を 1/2/5×10^n に丸める

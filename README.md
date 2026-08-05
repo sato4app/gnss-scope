@@ -17,15 +17,27 @@ NMEAデータからSkyPlot, SNR, DOP, DRMSを解析・表示する。
 - 接続は **BLE（Web Bluetooth）専用**。iPhone / iPad は Web Bluetooth 非対応のため対象外（Android Chrome 前提）。
 - データは **端末内の IndexedDB のみ**に保存（外部送信なし）。オフラインで完結する PWA。
 
+## 2系統の呼び方
+
+受信機は入れ替える可能性があるため、**画面と出力に機種名は出さない**。次の2語だけを使う。
+
+| 系統 | 表示名 | 実体 |
+|---|---|---|
+| 外部受信機 | **GNSS受信機** | BLE で生 NMEA を送ってくる機器（現状は MAX-M10S + Pico W） |
+| 端末側 | **Android内蔵** | 端末自身の測位（Geolocation API / Fused Location） |
+
+表示名の実体は `js/constants.js` の `SERIES` が唯一の出所。機種を替えるときはここだけ直す。
+「NMEA」はデータ形式の名前であって系統名ではない（「生NMEA」等はそのまま使う）。
+
 ## 画面構成（タブ）
 
 | タブ | 内容 |
 |---|---|
-| **接続** | connect / disconnect、接続状態、受信品質統計（M10S→Pico→BLE→アプリの取りこぼし確認） |
-| **記録** | record / stop / save / load、現在の測位値、収集状況、散布図、記録一覧（CSV/GPX/JSON 出力・削除・JSON 取込） |
+| **接続** | connect / disconnect、接続状態、受信品質統計（受信機→Pico→BLE→アプリの取りこぼし確認） |
+| **記録** | record / stop / save / load、収束の進捗バー、現在の測位値、散布図と2系統の凡例、測位結果、記録一覧（CSV/GPX/JSON 出力・削除・JSON 取込） |
 | **解析** | SkyPlot / SNR / DOP / DRMS。データソースを「ライブ」「読込データ」で切替 |
 | **地図** | 地理院地図（標準/淡色/写真）。**load した記録の GNSS 値**を中心マーカー＋エポック点群＋DRMS 円で表示。ライブ受信中は現在地・精度円・軌跡も表示 |
-| **設定** | UERE、記録の収集条件（自動停止・最低/上限時間・上限エポック）、地図種別、オフラインタイル事前DL、アプリ更新確認、モックNMEA配信 |
+| **設定** | UERE、記録の収集条件（自動停止・ビープ・最低/上限時間・上限エポック）、地図種別、オフラインタイル事前DL、アプリ更新確認、モックNMEA配信 |
 
 ## 記録の流れ（record → stop → save → load）
 
@@ -33,12 +45,17 @@ NMEAデータからSkyPlot, SNR, DOP, DRMSを解析・表示する。
 2. **stop** — 収集を止めて集計（中心・標準偏差・DRMS / 2DRMS・CEP50 / CEP95・標高・fix内訳・平均DOP・平均C/N0）。
    この時点では **まだ保存されない**（未保存の記録）。
    設定で「収束で自動停止」が有効なら、最低収集時間の経過後に**中心・DRMS が10秒横ばい**になった時点で自動停止する。
+   自動停止は**ビープ音**で知らせる（収束＝短く2回 / 上限＝長く1回。手動停止・中断では鳴らさない）。
 3. **save** — 地点名（既定 `yyyy-mm-dd-xx` の同日連番）とメモを付けて IndexedDB へ保存し、そのまま読込データになる。
 4. **load** — 記録一覧の「読込」で保存済みの記録を、「📂 JSON取込」で他端末が出力した JSON を読み込む。
    読み込んだ記録は解析タブ（スライダで任意エポックを再現）と地図タブに反映される。
 
 記録時は**各エポックの衛星リスト（系統 / PRN / 仰角 / 方位 / C/N0 / 使用中）も保存**するため、
 保存後・取込後でもスカイプロットと SNR チャートを再現できる。
+
+**記録は画面表示中のみ有効。** 画面 OFF / 他アプリへの切替が 5 秒を超えると、
+一時停止ではなく**中断して停止**する（BLE が切れて穴の空いた区間が1地点として残るのを防ぐため）。
+復帰後は続きではなく別の地点として測り直す。
 
 ## 開発・実行
 
@@ -59,6 +76,29 @@ python -m http.server 8000
 node tools/check-syntax.mjs
 ```
 
+ドキュメントの PDF（`docs/*.pdf`）は VSCode 拡張「Markdown PDF」で作れるほか、
+同じ体裁のままコマンドラインでも一括で出し直せる（拡張の CSS と既定設定を借りている）。
+**変換スクリプトはこのリポジトリには入れず、全プロジェクト共通で `~/.claude/tools/md-to-pdf.mjs`
+に1本だけ置いてある**（コピーを配ると直したときに配り直しになるため）：
+
+```bash
+node ~/.claude/tools/md-to-pdf.mjs          # docs/*.md をすべて変換
+node ~/.claude/tools/md-to-pdf.mjs docs/funcspec-202607.md   # 変更したものだけ
+node ~/.claude/tools/md-to-pdf.mjs --stale  # pdf より md が新しいものだけ
+node ~/.claude/tools/md-to-pdf.mjs --check  # 拡張・Chrome・依存の解決結果（不調時の切り分け用）
+```
+
+Claude Code の Stop フック（`~/.claude/settings.json`）から `--hook`（= `--stale` ＋ JSON 出力）が
+自動で呼ばれるため、md を直したあとの PDF 出し直しは手作業では不要。
+対象が無ければ Chrome を起動せず 0.3 秒で終わるので、docs を触らなかった回のコストはほぼゼロ。
+`docs/` を持つプロジェクトなら**セットアップなしでそのまま効く**（対象は実行時のカレント直下の `docs/`）。
+
+拡張のディレクトリは**版数を決め打ちせず**、インストール済みの中から最新版を探す
+（拡張が更新されてもパスを直す必要がない）。拡張・Chrome・依存のいずれかが欠けた場合は
+理由を画面に出す。フックは stderr を捨てて exit を 0 に潰すため、黙って PDF が古いままに
+ならないよう、失敗も `systemMessage` として必ず表示する。
+場所を明示したいときは環境変数 `MDPDF_EXT_DIR` / `MDPDF_CHROME` を使う。
+
 ## ファイル構成
 
 機能ごとに1ファイルへまとめ、UI（DOM 操作）とロジック（純粋関数・データ層）を分けている。
@@ -67,9 +107,9 @@ node tools/check-syntax.mjs
 index.html / manifest.json / sw.js     アプリシェル・PWA・Service Worker
 css/style.css                          ダークUI（ステータスバー / ページ / タブバー）
 js/
-  app.js             エントリ：受信パイプラインと各タブの結線のみ
-  constants.js       設定タブで扱う値の既定値（永続化しないため、ここが唯一の出所）
-  view-utils.js      画面共通（DOM ショートハンド・タブ切替・表示フォーマッタ）
+  app.js             エントリ：受信パイプラインと各タブの結線 ＋ 中断停止の猶予判定
+  constants.js       設定の既定値と2系統の表示名・色（永続化しないため、ここが唯一の出所）
+  view-utils.js      画面共通（DOM ショートハンド・タブ切替・表示フォーマッタ・停止サマリ）
   ── 受信 ──
   transport.js       受信経路：BLE(NUS) 接続・自動再接続 ＋ 開発用モック配信
   nmea.js            行復元（LineBuffer）＋ NMEA 解析（GGA/RMC/GSA/GSV/VTG/GST/$PPICO）
@@ -79,11 +119,14 @@ js/
   accuracy.js        水平精度推定・DRMS/CEP 集計・収束判定
   charts.js          Canvas 描画（スカイプロット / SNR / 散布図）＋共通土台
   recorder.js        record / stop / save の制御
+  device-gnss.js     Android内蔵GNSS の並行取得（記録中のみ）
+  beep.js            自動停止の通知音（収束＝短く2回 / 上限＝長く1回）
   storage.js         IndexedDB ラッパ（gnssScopeDB）
+  survey.js          調査日→地点のID体系・測定区間・対応検証
   file-io.js         CSV / GPX / JSON 出力と JSON 取込
   ── 画面（タブごと） ──
   connect-ui.js      接続タブ（connect / disconnect / 受信品質 / モック切替）
-  record-ui.js       記録タブ（record / stop / save / load・一覧・Wake Lock）
+  record-ui.js       記録タブ（record / stop / save / load・進捗バー・凡例・一覧・Wake Lock）
   analysis-ui.js     解析タブ（SkyPlot / SNR / DOP / DRMS、ライブ↔読込切替）
   map.js             地図タブ（Leaflet ＋ 地理院地図・読込データ表示）
   settings-ui.js     設定タブ（各種設定・アプリ更新確認）
@@ -94,6 +137,10 @@ micropython/main.py                    Pico W 側ファーム（ダムパイプ�
 tools/check-syntax.mjs                 構文チェック＋純粋ロジックテスト
 ```
 
+**このリポジトリは npm 依存を持たない**（`package.json` も `node_modules` も無い）。
+アプリ本体はビルド不要の静的ファイル構成で、PDF 変換に必要な markdown-it / highlight.js は
+リポジトリの外（`~/.claude/tools/`）に置いてある。
+
 ## ドキュメント
 
 | 文書 | 内容 | 主な読者 |
@@ -101,7 +148,7 @@ tools/check-syntax.mjs                 構文チェック＋純粋ロジック�
 | [docs/funcspec-202607.md](docs/funcspec-202607.md) | **機能仕様**（何ができるか・仕様値・画面ごとの定義） | 仕様を確認する人 |
 | [docs/usersGuide-202607.md](docs/usersGuide-202607.md) | **利用者の手引**（操作手順・画面の読み方・困ったとき） | 使う人 |
 | [docs/design-202607.md](docs/design-202607.md) | **実装設計**（構成・データモデル・モジュール責務・リファクタ記録） | 実装する人 |
-| [docs/algospec-202607.md](docs/algospec-202607.md) | **算出・判定ロジック**（精度推定・DRMS/CEP・収束自動停止・表示保持・受信品質） | 数値の根拠を追う人 |
+| [docs/algospec-202607.md](docs/algospec-202607.md) | **算出・判定ロジック**（精度推定・DRMS/CEP・収束自動停止・表示保持・受信品質・散布図の表示半径） | 数値の根拠を追う人 |
 | [docs/hardware-202607.md](docs/hardware-202607.md) | **機器・ファーム仕様**（MAX-M10S / Pico W / UART / BLE / `$PPICO`） | 機器を組む人 |
 
 この5文書が現行の仕様です（前身 gnss-tracker 時代の要件・設計、および個別機能ごとの実装仕様書は、

@@ -198,6 +198,94 @@ body {
 
 .scatter-canvas { width: min(86vw, 320px); height: min(86vw, 320px); display: block; margin: 0 auto; }
 
+/* 散布図の凡例（系統名・点数・DRMS）。散布図を狭めないよう、
+   広い画面では図の脇へ、狭い画面では図の下へ自動で回り込ませる。 */
+.series-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums; /* 記録中に数値が伸び縮みしないように */
+}
+.series-legend .item { display: flex; align-items: center; gap: 6px; }
+.series-legend .name { color: var(--text); }
+/* 記号は色だけでなく形でも区別する（直射日光下・色覚特性で色が頼れないため）。
+   塗り＝GNSS受信機 / 中抜き＝Android内蔵 で、散布図の点の描き分けと合わせている。 */
+.series-legend .mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  border: 1.5px solid transparent;
+}
+.note-outside { font-size: 11px; color: var(--muted); text-align: center; margin-top: 4px; }
+.note-outside[hidden] { display: none; }
+
+/* 収束の進捗（記録中のみ）。主バー=経過/上限、副バー=収束判定 */
+.rec-progress {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.rec-progress[hidden] { display: none; }
+.prog-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+.prog-row > .prog-name { width: 60px; font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+.prog-row > b { width: 92px; text-align: right; font-size: 12px; flex: 0 0 auto; }
+.prog-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 10px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.prog-track.thin { height: 6px; }
+.prog-track > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.prog-track > i.ok { background: var(--good); }
+/* 品質不良で安定カウントが 0 に戻ったことを見せる（バーが戻る理由が分かるように） */
+.prog-track > i.reset { background: var(--bad); transition: none; }
+/* 最低収集時間の位置。ここを越えるまでは収束していても停止しない */
+.prog-mark {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.55);
+}
+.prog-mark[hidden] { display: none; }
+.prog-judge[hidden] { display: none; }
+.prog-quality { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* 折りたたみ（現在の測位値 / 測位結果）。summary に要点を出し、明細は開いたときだけ。 */
+.fold > summary { cursor: pointer; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::marker { content: ''; }
+.fold > summary::before { content: '▶ '; font-size: 10px; }
+.fold[open] > summary::before { content: '▼ '; }
+.result-fold[hidden] { display: none; }
+.result-fold > summary {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+.result-fold > summary.warn { color: var(--warn); }
+
 .session-list { list-style: none; margin: 0; padding: 0; }
 .session-list li {
   background: var(--panel);
@@ -295,12 +383,14 @@ body {
 }
 .an-cell .snr-canvas { height: 150px; }
 .an-grid > .an-wide { grid-column: 1 / -1; }
-/* DRMS 見出しに同居させる「端末内蔵GNSSと比較」トグル */
+/* DRMS 見出しに同居させる「Android内蔵と比較」トグル */
 .cmp-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
 .cmp-toggle[hidden] { display: none; }
 .legend[hidden] { display: none; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; font-size: 11px; color: var(--muted); }
 .legend .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+/* 中抜き（Android内蔵）。色に加えて形でも系統を区別する。border-color は JS が指定する */
+.legend .swatch.hollow { background: none; border: 1.5px solid; }
 
 .sys-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .sys-chip {

@@ -1,20 +1,21 @@
 // 「調査日 → 地点 → 実データ」のツリーを扱う純粋関数群（DOM にも IndexedDB にも触らない）。
-// 1日に何十地点もまわる測定で、どの NMEA 記録とどの Android 測位が
+// 1日に何十地点もまわる測定で、どの GNSS受信機の記録とどの Android内蔵の測位が
 // 「同じ地点・同じ時間」のものかを後から必ず辿れるようにするための ID 体系と検証を持つ。
 //
 //   surveys   id = 'yyyy-mm-dd'（ローカル日付。ツリーの根＝1日の調査）
 //    └ sessions  id = 'rec_<開始ms>' ＋ surveyId / pointNo（枝＝1地点）
 //       └ points   sessionId ＋ surveyId / pointNo（葉＝実データ）
-//                    samples[]       M10S のパース済みエポック
-//                    rawNmea[]       M10S の生NMEA行
-//                    deviceSamples[] Android（端末内蔵GNSS）の測位
+//                    samples[]       GNSS受信機のパース済みエポック
+//                    rawNmea[]       GNSS受信機の生NMEA行
+//                    deviceSamples[] Android内蔵GNSS の測位
 //
 // 葉にも surveyId / pointNo を複写するのは、point 単体を取り出しても
 // 「どの調査日の何番地点か」が分かるようにするため（エクスポートした JSON も同じ形）。
 //
-// 時刻軸について：M10S のサンプル t は GPS時刻(UTC)、Android のサンプル t は端末時計で、
-// 別々の時計である。区間の突き合わせは両者が共通に持つ端末時計（M10S 側は recvAt）で行い、
+// 時刻軸について：受信機のサンプル t は GPS時刻(UTC)、内蔵のサンプル t は端末時計で、
+// 別々の時計である。区間の突き合わせは両者が共通に持つ端末時計（受信機側は recvAt）で行い、
 // GPS時刻との差は clockOffsetMs として別に残す（docs/design-202607.md 4.）。
+import { SERIES } from './constants.js';
 
 const p2 = (n) => String(n).padStart(2, '0');
 
@@ -46,7 +47,7 @@ export function nextPointNo(sessions, surveyId) {
 // ---- 測定区間（時間窓） ----
 
 // サンプル列 → 区間 { startedAt, endedAt, durationSec, count }。0件なら null。
-// getT でどの時刻フィールドを見るかを差し替える（M10S は recvAt / GPS時刻の両方を取るため）。
+// getT でどの時刻フィールドを見るかを差し替える（受信機は recvAt / GPS時刻の両方を取るため）。
 export function timeWindow(samples, getT = (s) => s?.t) {
   let min = Infinity;
   let max = -Infinity;
@@ -66,7 +67,7 @@ export function timeWindow(samples, getT = (s) => s?.t) {
 const inWindow = (t, w) => !!w && Number.isFinite(t) && t >= w.startedAt && t <= w.endedAt;
 
 // サンプル列のうち区間 w に入っている件数。
-// Android は OS が静止中の更新を間引くため 1〜数点しか来ないことがあり、
+// Android内蔵は OS が静止中の更新を間引くため 1〜数点しか来ないことがあり、
 // 割合ベースの重なりだけでは対応を判断できない。件数はその場合でも意味を持つ。
 export function countInWindow(samples, w, getT = (s) => s?.t) {
   let n = 0;
@@ -78,8 +79,8 @@ export function countInWindow(samples, w, getT = (s) => s?.t) {
 
 // 2つの区間の重なり。地点の対応（同じ時間に測ったか）を後から検証するための値。
 //   overlapSec   重なった秒数
-//   coverGnss    M10S 区間のうち Android も取れていた割合（0〜1）
-//   coverDevice  Android 区間のうち M10S も取れていた割合（0〜1）
+//   coverGnss    GNSS受信機の区間のうち Android内蔵も取れていた割合（0〜1）
+//   coverDevice  Android内蔵の区間のうち GNSS受信機も取れていた割合（0〜1）
 // 片方が1点だけだと区間の長さが 0 になり割合を計算できない。
 // その場合は「相手の区間の中にあれば 100%、外なら 0%」として扱う。
 export function windowOverlap(gnss, device) {
@@ -92,7 +93,7 @@ export function windowOverlap(gnss, device) {
   return { overlapSec: overlapMs / 1000, coverGnss: cover(gnss, device), coverDevice: cover(device, gnss) };
 }
 
-// 端末時計 − GPS時刻 [ms]（中央値）。Android 側は端末時計しか持たないため、
+// 端末時計 − GPS時刻 [ms]（中央値）。Android内蔵側は端末時計しか持たないため、
 // この値が分かっていれば後から2系統を GPS時刻の軸へ並べ直せる。
 // recvAt / t の両方を持つサンプルが無ければ null。
 export function clockOffsetMs(samples) {
@@ -110,7 +111,7 @@ export function clockOffsetMs(samples) {
 // startedAt / endedAt は記録操作そのものの時刻（端末時計）で、
 // gnss / device はそれぞれの系統で実際にデータが取れていた範囲。
 // 区間の突き合わせに使う時刻。2系統とも「アプリが受け取った端末時計の時刻」に揃える。
-// M10S の t は GPS時刻、Android の t は OS が測位を確定した時刻で、どちらも別の時計。
+// 受信機の t は GPS時刻、内蔵の t は OS が測位を確定した時刻で、どちらも別の時計。
 // recvAt を持たない古い記録・取込データでは t にフォールバックする。
 const rxTime = (s) => s?.recvAt ?? s?.t;
 
@@ -121,8 +122,8 @@ export function buildWindow({ startedAt, endedAt, samples, deviceSamples }) {
   if (overlap) {
     // 割合だけでは判断できない少数サンプルのために、実数でも対応を残す。
     // 基準は「エポックの範囲」ではなく record→stop の記録区間にする。
-    // NMEA の最初のエポックは複数センテンスが揃うまで確定しない（1秒強かかる）ため、
-    // 記録開始直後に届いた Android のサンプルがエポック範囲の外に落ちてしまう。
+    // 受信機の最初のエポックは複数センテンスが揃うまで確定しない（1秒強かかる）ため、
+    // 記録開始直後に届いた内蔵のサンプルがエポック範囲の外に落ちてしまう。
     overlap.deviceInRecording = countInWindow(deviceSamples, { startedAt, endedAt }, rxTime);
     overlap.deviceTotal = device.count;
   }
@@ -143,9 +144,9 @@ export function buildWindow({ startedAt, endedAt, samples, deviceSamples }) {
 // ---- 地点の対応状況 ----
 
 export const PAIRING_LABELS = {
-  both: 'NMEA＋Android',
-  gnssOnly: 'NMEAのみ',
-  deviceOnly: 'Androidのみ',
+  both: `${SERIES.gnss.label}＋${SERIES.device.label}`,
+  gnssOnly: `${SERIES.gnss.label}のみ`,
+  deviceOnly: `${SERIES.device.label}のみ`,
   none: 'データなし',
 };
 
@@ -181,7 +182,7 @@ export function groupBySurvey(sessions) {
 }
 
 // 調査日グループの集計（一覧のヘッダ表示用）。
-// 「20地点まわって NMEA と Android が両方揃ったのは何地点か」が一目で分かるようにする。
+// 「20地点まわって2系統とも揃ったのは何地点か」が一目で分かるようにする。
 export function surveySummary(sessions) {
   const counts = { both: 0, gnssOnly: 0, deviceOnly: 0, none: 0 };
   let drmsSum = 0;

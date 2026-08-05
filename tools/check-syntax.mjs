@@ -52,6 +52,10 @@ const { compareRow, COMPARE_HEADER, importSessionFile } = await import(pathToFil
 const { Recorder } = await import(pathToFileURL(resolve(jsDir, 'recorder.js')).href);
 const { EpochAssembler } = await import(pathToFileURL(resolve(jsDir, 'epoch.js')).href);
 const { StreamStats, diffRxStats } = await import(pathToFileURL(resolve(jsDir, 'stream-stats.js')).href);
+// 系統名は js/constants.js が唯一の出所。表示文言のテストもそこを参照する
+// （機種を替えて SERIES を書き換えたときに、テストだけ古い名前で落ちないようにする）。
+const { SERIES } = await import(pathToFileURL(resolve(jsDir, 'constants.js')).href);
+const { stopSummaryText } = await import(pathToFileURL(resolve(jsDir, 'view-utils.js')).href);
 
 function assert(cond, msg) {
   if (cond) {
@@ -202,6 +206,48 @@ const short = mkHistory(5, (i) => ({ lat: 34.8536, lon: 135.472, drms: 1.0 })).m
 const convShort = evaluateConvergence(short, 40, CONV_OPTS);
 assert(convShort.stable === false && convShort.centerMoveM == null, '収束: 窓未充足は not stable');
 
+// 進捗バーの2フェーズ（記録タブ）。フェーズ1は「連続良好データが溜まるまで」、
+// フェーズ2は「窓は溜まったが中心・DRMS がまだ許容外」。この区別が付かないと
+// バーが満タンのまま止まらない状態を説明できない。
+assert(convShort.windowReady === false && convShort.stableSec === 4, '収束: フェーズ1は windowReady=false と経過秒');
+assert(convDrift.windowReady === true && convDrift.stable === false, '収束: フェーズ2は windowReady=true でも未収束');
+assert(convDrift.centerTolM === 0.3 && convDrift.drmsTolM >= 0.3, '収束: 判定ゲージ用に許容値も返す');
+assert(evaluateConvergence([], 40, CONV_OPTS).stableSec === 0, '収束: 履歴なしは stableSec 0');
+// DRMS 許容は絶対値と割合の大きい方（大きくばらつく場所で判定が厳しくなりすぎないように）
+assert(
+  evaluateConvergence(mkHistory(41, () => ({ lat: 34.8536, lon: 135.472, drms: 20 })), 40, CONV_OPTS).drmsTolM === 1,
+  '収束: DRMS許容は絶対値と割合の大きい方'
+);
+
+// ---- 停止サマリ（記録タブの測位結果の見出し。js/view-utils.js） ----
+// 「未収束」と「収束判定なし（自動停止OFF）」を書き分けること、
+// 秒数と点数を併記して取りこぼし（BLE欠落・中断）が見えることを担保する。
+assert(
+  stopSummaryText({ stopReason: 'converged', durationSec: 45, count: 45, autoStop: true }) === '収束で自動停止（45秒/45点）',
+  '停止サマリ: 収束は但し書きなし'
+);
+assert(
+  stopSummaryText({ stopReason: 'timeout', durationSec: 180, count: 52, autoStop: true }) === '上限時間で停止（未収束: 180秒/52点）',
+  '停止サマリ: 上限時間は未収束'
+);
+assert(
+  stopSummaryText({ stopReason: 'maxEpochs', durationSec: 150, count: 300, autoStop: true }).startsWith('上限エポックで停止'),
+  '停止サマリ: 上限エポック'
+);
+assert(
+  stopSummaryText({ stopReason: 'manual', durationSec: 20, count: 20, autoStop: false }) === '手動停止（収束判定なし: 20秒/20点）',
+  '停止サマリ: 自動停止OFFは「収束判定なし」'
+);
+assert(
+  stopSummaryText({ stopReason: 'interrupted', durationSec: 30, count: 11, autoStop: true }) === '中断で停止（未収束: 30秒/11点）',
+  '停止サマリ: 中断停止'
+);
+assert(
+  stopSummaryText({ stopReason: 'manual', durationSec: 30, count: 0, autoStop: true }) === '測位データなしで停止（30秒/0点）',
+  '停止サマリ: 有効エポック0'
+);
+assert(stopSummaryText({ durationSec: 10, count: 10 }).startsWith('手動停止'), '停止サマリ: 停止理由なしの旧データは手動停止扱い');
+
 // ---- 調査日 → 地点 のツリー（js/survey.js） ----
 
 // ID 体系：1日に何十地点まわっても survey_id + point_no で地点を一意に指せること
@@ -270,7 +316,10 @@ const winText = formatWindow(
   { startedAt: 0, endedAt: 60000, durationSec: 60, gnss: { startedAt: 0, endedAt: 60000, durationSec: 60, count: 60 }, device: { startedAt: 10000, endedAt: 60000, durationSec: 50, count: 20 }, overlap: { overlapSec: 50, coverGnss: 0.83, coverDevice: 1 }, clockOffsetMs: 300 },
   { rawLines: 900 }
 );
-assert(winText.includes('NMEA(M10S)') && winText.includes('Android') && winText.includes('重なり'), '区間テキスト: 2系統と重なりを出す');
+assert(
+  winText.includes(SERIES.gnss.label) && winText.includes(SERIES.device.label) && winText.includes('重なり'),
+  '区間テキスト: 2系統と重なりを出す'
+);
 assert(
   formatWindow(
     { startedAt: 0, endedAt: 60000, durationSec: 60, gnss: { startedAt: 0, endedAt: 60000, durationSec: 60, count: 60 }, device: { startedAt: 30000, endedAt: 30000, durationSec: 0, count: 1 }, overlap: { overlapSec: 0, coverGnss: 0, coverDevice: 1, deviceInRecording: 1, deviceTotal: 1 } },
@@ -288,6 +337,11 @@ const snrStats = computeStaticStats([
 ]);
 assert(Math.abs(snrStats.avgSnrUsed - 35) < 1e-9, '集計: 使用衛星の平均C/N0（未使用衛星は除く）');
 assert(formatStats({ label: '未保存の記録' }, snrStats).includes('DRMS'), '集計テキスト: 未保存の記録でも生成できる');
+// 停止理由は測位結果の見出し（stopSummaryText）が持つ。集計テキストにも出すと二重になる
+assert(
+  !formatStats({ label: 'x', stopReason: 'converged' }, snrStats).includes('自動停止'),
+  '集計テキスト: 停止理由は含めない（見出しと二重にしない）'
+);
 
 // ---- 記録フロー（record → stop → save） ----
 // 保存先の擬似ストア（storage.js と同じ呼び出し面を持たせる）
@@ -390,7 +444,7 @@ assert(computeDeviceStats([], { lat: 34.8536, lon: 135.472 }) === null, '内蔵G
 
 // 比較テキスト（重複が多いと過小評価の注意を出す）
 const cmpText = formatCompare(snrStats, devStats);
-assert(cmpText.includes('比較: 端末内蔵GNSS') && cmpText.includes('中心のズレ'), '比較テキスト: 主要行');
+assert(cmpText.includes(`比較: ${SERIES.device.label}`) && cmpText.includes('中心のズレ'), '比較テキスト: 主要行');
 assert(cmpText.includes('過小評価'), '比較テキスト: 座標重複が多いと注意を出す');
 assert(formatCompare(snrStats, null) === '', '比較テキスト: 比較データなしは空');
 

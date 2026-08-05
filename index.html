@@ -53,40 +53,69 @@
     </section>
 
     <!-- 2. 記録 -->
+    <!-- 画面は上から「操作 → 進捗 → 図 → 結果 → 保存」の順。測っている間に見るものだけを
+         開いた状態にし、後から確認するもの（現在の測位値・測位結果の明細）は畳んでおく。 -->
     <section class="page" id="page-record">
-      <div class="note">⚠ 記録は画面表示中のみ有効です（画面OFF/バックグラウンドでBLEが切断され、記録は一時停止します）</div>
+      <div class="note">⚠ 記録は画面表示中のみ有効です（画面OFF・他アプリへの切替が5秒を超えると記録を中断します。再開は別の地点として測り直してください）</div>
       <div class="rec-actions">
         <button id="btn-record" class="btn primary">⏺ 記録</button>
         <button id="btn-stop" class="btn" disabled>⏹ 停止</button>
         <button id="btn-save" class="btn" disabled>💾 保存</button>
       </div>
 
-      <div class="sub-head">現在の測位値</div>
-      <dl class="grid">
-        <div><dt>緯度</dt><dd id="rc-lat" class="mono">—</dd></div>
-        <div><dt>経度</dt><dd id="rc-lon" class="mono">—</dd></div>
-        <div><dt>標高(MSL)</dt><dd id="rc-alt" class="mono">—</dd></div>
-        <div><dt>推定水平精度</dt><dd id="rc-acc" class="mono">—</dd></div>
-        <div><dt>衛星 使用/視野内</dt><dd id="rc-sats" class="mono">—</dd></div>
-        <div><dt>HDOP</dt><dd id="rc-hdop" class="mono">—</dd></div>
-      </dl>
-
-      <div id="rec-live" class="rec-live" hidden>
-        <div class="sub-head">収集状況</div>
-        <dl class="grid">
-          <div><dt>収集点数</dt><dd id="rc-count" class="mono">0</dd></div>
-          <div><dt>経過時間</dt><dd id="rc-elapsed" class="mono">0 s</dd></div>
-          <div><dt>DRMS(暫定)</dt><dd id="rc-drms" class="mono">—</dd></div>
-          <div><dt>CEP50(暫定)</dt><dd id="rc-cep" class="mono">—</dd></div>
-          <div><dt>収束判定</dt><dd id="rc-conv" class="mono">—</dd></div>
-          <div><dt>端末内蔵GNSS</dt><dd id="rc-device" class="mono">—</dd></div>
-          <div><dt>生NMEA</dt><dd id="rc-raw" class="mono">—</dd></div>
-        </dl>
+      <!-- 収束の進捗（記録中のみ）。主バー=経過/上限、副バー=収束判定の2フェーズ -->
+      <div id="rec-progress" class="rec-progress" hidden>
+        <div class="prog-row">
+          <span class="prog-name">経過</span>
+          <div class="prog-track"><i id="prog-elapsed"></i><b id="prog-minmark" class="prog-mark" hidden></b></div>
+          <b id="prog-elapsed-val" class="mono">0s</b>
+        </div>
+        <div id="prog-stable-row" class="prog-row">
+          <span class="prog-name" id="prog-stable-name">安定</span>
+          <div class="prog-track thin"><i id="prog-stable"></i></div>
+          <b id="prog-stable-val" class="mono">—</b>
+        </div>
+        <div id="prog-judge" class="prog-judge" hidden>
+          <div class="prog-row">
+            <span class="prog-name">中心移動</span>
+            <div class="prog-track thin"><i id="judge-center"></i></div>
+            <b id="judge-center-val" class="mono">—</b>
+          </div>
+          <div class="prog-row">
+            <span class="prog-name">DRMS幅</span>
+            <div class="prog-track thin"><i id="judge-drms"></i></div>
+            <b id="judge-drms-val" class="mono">—</b>
+          </div>
+        </div>
+        <div id="prog-quality" class="prog-quality mono">—</div>
       </div>
 
-      <div class="sub-head">散布図（中心からの東西×南北オフセット）</div>
-      <canvas id="rec-scatter" class="scatter-canvas"></canvas>
-      <div id="rec-result" class="result-box"></div>
+      <!-- 現在の測位値。記録中は畳む（進捗と散布図に注意を寄せるため） -->
+      <details id="rc-fix-box" class="fold" open>
+        <summary class="sub-head">現在の測位値</summary>
+        <dl class="grid">
+          <div><dt>緯度</dt><dd id="rc-lat" class="mono">—</dd></div>
+          <div><dt>経度</dt><dd id="rc-lon" class="mono">—</dd></div>
+          <div><dt>標高(MSL)</dt><dd id="rc-alt" class="mono">—</dd></div>
+          <div><dt>推定水平精度</dt><dd id="rc-acc" class="mono">—</dd></div>
+          <div><dt>衛星 使用/視野内</dt><dd id="rc-sats" class="mono">—</dd></div>
+          <div><dt>HDOP</dt><dd id="rc-hdop" class="mono">—</dd></div>
+        </dl>
+      </details>
+
+      <!-- 散布図。記録を始めるまでは出さない（空の正方形で画面を埋めない） -->
+      <div id="rec-scatter-box" hidden>
+        <div class="sub-head">散布図（中心からの東西×南北オフセット）</div>
+        <canvas id="rec-scatter" class="scatter-canvas"></canvas>
+        <div id="rec-legend" class="series-legend"></div>
+        <div id="rec-outside" class="note-outside" hidden></div>
+      </div>
+
+      <!-- 測位結果。見出しに停止条件だけを出し、明細は開いたときだけ見せる -->
+      <details id="rec-result-box" class="fold result-fold" hidden>
+        <summary id="rec-stop-summary">測位結果</summary>
+        <div id="rec-result" class="result-box"></div>
+      </details>
 
       <div id="save-form" class="rec-form" hidden>
         <input id="rec-label" type="text" placeholder="地点名">
@@ -98,7 +127,7 @@
         <button id="btn-import" class="btn">📂 JSON取込</button>
         <input id="file-import" type="file" accept="application/json,.json" hidden>
       </div>
-      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の NMEA と Android の測位は同じレコードに入るため対応が崩れません。調査日の「対応表CSV」で 1行1地点の比較表を出せます。</div>
+      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の GNSS受信機と Android内蔵の測位は同じレコードに入るため対応が崩れません。調査日の「対応表CSV」で 1行1地点の比較表を出せます。</div>
       <ul id="session-list" class="session-list"></ul>
     </section>
 
@@ -119,17 +148,16 @@
            見出しと本体を別セルにして、左右の図の高さ位置を揃えている -->
       <div class="an-grid">
         <div class="sub-head">スカイプロット（半径=仰角 / 角度=方位 / 大きさ=SNR / 塗り=使用中）</div>
-        <div class="sub-head">DRMS（記録データのばらつき）<label id="an-cmp-row" class="cmp-toggle" hidden><input id="an-cmp" type="checkbox" checked>端末内蔵GNSSと比較</label></div>
+        <div class="sub-head">DRMS（記録データのばらつき）<label id="an-cmp-row" class="cmp-toggle" hidden><input id="an-cmp" type="checkbox" checked>Android内蔵と比較</label></div>
         <div class="an-cell">
           <canvas id="sky-plot" class="sky-canvas"></canvas>
           <div id="legend" class="legend"></div>
         </div>
         <div class="an-cell">
           <canvas id="an-scatter" class="scatter-canvas"></canvas>
-          <div id="an-scatter-legend" class="legend" hidden>
-            <span><i class="swatch" style="background:#f0a93a"></i>MAX-M10S</span>
-            <span><i class="swatch" style="background:#b98cff"></i>端末内蔵GNSS</span>
-          </div>
+          <!-- 系統の凡例は js/analysis-ui.js が js/constants.js の SERIES から組み立てる -->
+          <div id="an-scatter-legend" class="legend" hidden></div>
+          <div id="an-outside" class="note-outside" hidden></div>
         </div>
         <!-- 集計テキストは行数が多いため2列ぶち抜きで散布図の下に置く -->
         <div id="an-drms" class="result-box an-wide"></div>
@@ -176,7 +204,11 @@
       <label class="set-row">収束で自動停止（中心・DRMSが10秒横ばい）
         <input id="set-autostop" type="checkbox">
       </label>
-      <label class="set-row">記録中に端末内蔵GNSSも取得して比較する
+      <label class="set-row">自動停止をビープ音で知らせる
+        <input id="set-beep" type="checkbox">
+      </label>
+      <div class="note-dim">収束で止まったときは短く2回、上限時間で止まったときは長く1回鳴らします（手動停止・中断では鳴りません）。端末が消音・音量0のときは鳴りません。</div>
+      <label class="set-row">記録中に Android内蔵GNSS も取得して比較する
         <input id="set-devgnss" type="checkbox">
       </label>
       <label class="set-row">生NMEA行もそのまま保存する

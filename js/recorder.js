@@ -8,11 +8,15 @@
 // summary に残す（docs/algospec-202607.md 5.）。
 //
 // 1地点の記録で 2 系統を同時に集める（仕様 4-8）:
-//   M10S   生NMEA行（rawNmea）＋ パース済みエポック（samples）
-//   Android 端末内蔵GNSS の測位（deviceSamples）
+//   GNSS受信機   生NMEA行（rawNmea）＋ パース済みエポック（samples）
+//   Android内蔵  OS の測位（deviceSamples）
 // どちらも同じ point レコードへ入れ、地点番号（surveyId + pointNo）を付けて保存するので、
-// 1日に何十地点まわっても「どの NMEA とどの Android データが対か」は後から必ず辿れる。
+// 1日に何十地点まわっても「どの受信機データとどの Android データが対か」は後から必ず辿れる。
 // 2系統が本当に同じ時間に取れていたかは window.overlap で検証する（js/survey.js）。
+//
+// 画面OFF・他アプリへの切替が続いた場合は一時停止ではなく stop('interrupted') で
+// 打ち切る（仕様 3-7）。BLE が切れて穴の空いた区間を1地点として残さないため。
+// 復帰後は続きではなく別の地点として測り直す。猶予の判定は app.js 側。
 // 記録タブの UI 配線（ボタン・表示）は record-ui.js 側。
 import { computeStaticStats, computeDeviceStats, evaluateConvergence } from './accuracy.js';
 import { diffRxStats } from './stream-stats.js';
@@ -25,6 +29,20 @@ const CONVERGENCE = { holdSec: 10, centerTolM: 0.3, drmsTolAbsM: 0.3, drmsTolPct
 // 1Hz で 10〜20 行/秒なので、20000 行 ≈ 20〜30 分ぶん（約 1.6 MB）。
 // 打ち切った場合は rawTruncated に本数を残し、記録が途中までであることを隠さない。
 const MAX_RAW_LINES = 20000;
+
+// サンプル列が実際にデータを返していた長さ [秒]。0〜1点なら 0。
+// 時刻軸は端末時計（recvAt）に揃える。2系統で共通に持つのはこれだけのため。
+function spanSecOf(samples) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const s of samples || []) {
+    const t = s?.recvAt ?? s?.t;
+    if (!Number.isFinite(t)) continue;
+    if (t < min) min = t;
+    if (t > max) max = t;
+  }
+  return max > min ? (max - min) / 1000 : 0;
+}
 
 // 品質ゲート：そのエポックを収束判定に使えるか（停止用途のみ。記録の蓄積条件は変えない）
 function qualityOk(epoch) {
@@ -70,7 +88,7 @@ export class Recorder {
     this.onUpdate = onUpdate || (() => {}); // 収集中のライブ表示更新
     this.onStop = onStop || (() => {}); // 自動停止を含む停止通知（引数 = pending）
     this.getRxStats = getRxStats || null; // 受信品質統計の snapshot 提供元（app.js）
-    this.deviceGnss = deviceGnss || null; // 端末内蔵GNSS の並行取得（null 可）
+    this.deviceGnss = deviceGnss || null; // Android内蔵GNSS の並行取得（null 可）
     this.latestEpoch = null;
     this.current = null; // 収集中: { startedAt, samples, rawNmea, maxSec, maxEpochs, paused, ... }
   }
@@ -80,7 +98,7 @@ export class Recorder {
   // 「受信したそのまま」を残す意味で区別せず入れる。
   addRawLine(line) {
     const rec = this.current;
-    if (!rec || rec.paused || !rec.saveRaw) return;
+    if (!rec || !rec.saveRaw) return;
     if (rec.rawNmea.length >= MAX_RAW_LINES) {
       rec.rawTruncated++;
       return;
@@ -92,13 +110,13 @@ export class Recorder {
   addEpoch(epoch) {
     this.latestEpoch = epoch;
     const rec = this.current;
-    if (!rec || rec.paused) return;
+    if (!rec) return;
     if (epoch.lat == null || epoch.lon == null || !(epoch.fixQuality > 0)) return;
 
     rec.samples.push(toSample(epoch));
     const elapsedSec = (Date.now() - rec.startedAt) / 1000;
     const stats = computeStaticStats(rec.samples); // 暫定ばらつき（点数は高々数百なので毎回計算で十分軽い）
-    // 端末内蔵GNSS の暫定集計も同じ頻度で更新する（比較を記録中から見せるため）
+    // Android内蔵GNSS の暫定集計も同じ頻度で更新する（比較を記録中から見せるため）
     rec.deviceStats = rec.withDevice ? computeDeviceStats(rec.deviceSamples, stats?.center || null) : null;
 
     // 収束状況の算出（品質ゲート通過エポックのみ履歴に積む。不良で連続性リセット）
@@ -142,26 +160,26 @@ export class Recorder {
     return !!this.current;
   }
 
-  // 画面非表示中は収集を一時停止する（BLE も切れるため。仕様 3-7）
-  setPaused(paused) {
-    if (!this.current) return;
-    this.current.paused = paused;
-    if (this.current.withDevice) this.deviceGnss.setPaused(paused);
-  }
-
-  // 端末内蔵GNSS の 1 サンプル（device-gnss.js → app.js 経由。収集中のみ蓄積する）
+  // Android内蔵GNSS の 1 サンプル（device-gnss.js → app.js 経由。収集中のみ蓄積する）
   addDeviceSample(sample) {
     const rec = this.current;
-    if (!rec || rec.paused || !rec.withDevice) return;
+    if (!rec || !rec.withDevice) return;
     if (sample?.lat == null || sample.lon == null) return;
     rec.deviceSamples.push(sample);
   }
 
-  // 収集状況表示用（記録タブの「端末内蔵GNSS」行）。並行取得していなければ null。
+  // 収集状況表示用（記録タブの散布図凡例）。並行取得していなければ null。
+  // spanSec は内蔵が実際にデータを返していた長さ。GNSS受信機の 1Hz と違って
+  // OS が更新を間引くため、点数だけでは「何秒ぶんか」が分からない（仕様 1）。
   _deviceInfo() {
     const rec = this.current;
     if (!rec?.withDevice) return null;
-    return { status: this.deviceGnss.status, count: rec.deviceSamples.length, stats: rec.deviceStats };
+    return {
+      status: this.deviceGnss.status,
+      count: rec.deviceSamples.length,
+      spanSec: spanSecOf(rec.deviceSamples),
+      stats: rec.deviceStats,
+    };
   }
 
   // ---- record ----
@@ -172,7 +190,6 @@ export class Recorder {
       samples: [],
       maxSec,
       maxEpochs,
-      paused: false,
       autoStop, // 収束自動停止の有効/無効
       minSec, // 最低収集時間 [秒]（これ未満では絶対に停止しない）
       convHistory: [], // [{ t, lat, lon, drms }] 品質ゲート通過エポックのみ
@@ -180,8 +197,8 @@ export class Recorder {
       saveRaw, // 生NMEA行も残すか（設定 saveRawNmea）
       rawNmea: [], // [{ t, line }] 受信した NMEA 行そのもの
       rawTruncated: 0, // 上限超過で捨てた行数
-      withDevice: withDevice && !!this.deviceGnss, // 端末内蔵GNSS を並行取得するか
-      deviceSamples: [], // 端末内蔵GNSS のサンプル（M10S とはレートも点数も揃わない）
+      withDevice: withDevice && !!this.deviceGnss, // Android内蔵GNSS を並行取得するか
+      deviceSamples: [], // Android内蔵GNSS のサンプル（受信機とはレートも点数も揃わない）
       deviceStats: null,
     };
     if (this.current.withDevice) this.deviceGnss.start();
@@ -197,10 +214,14 @@ export class Recorder {
 
   // ---- stop ----
   // 収集を止めて集計する。DB へは書かず「未保存の記録」を返す（保存は save()）。
+  // reason: 'converged' | 'timeout' | 'maxEpochs' | 'manual' | 'interrupted'
   stop(reason = 'manual') {
     const rec = this.current;
     if (!rec) return null;
     this.current = null;
+    // 状態は watch を止める前に控える（stop() で idle に戻るため）。
+    // 1点も取れなかった理由（未許可・非対応など）を停止後の表示にも残す。
+    const deviceStatus = rec.withDevice ? this.deviceGnss.status : null;
     if (rec.withDevice) this.deviceGnss.stop();
 
     const stats = computeStaticStats(rec.samples);
@@ -211,9 +232,11 @@ export class Recorder {
       // 生NMEA行（保存 OFF なら null。空配列と「取っていない」を区別する）
       rawNmea: rec.saveRaw ? rec.rawNmea : null,
       rawTruncated: rec.rawTruncated,
-      // 端末内蔵GNSS の比較値（M10S の中心を基準にズレを出す）
+      // Android内蔵GNSS の比較値（GNSS受信機の中心を基準にズレを出す）
       deviceSamples: rec.deviceSamples,
       deviceStats: rec.withDevice ? computeDeviceStats(rec.deviceSamples, stats?.center || null) : null,
+      deviceStatus,
+      deviceSpanSec: spanSecOf(rec.deviceSamples),
       startedAt: rec.startedAt,
       endedAt,
       // 2系統それぞれの実測区間と、その重なり（地点の対応を後から検証するため）
@@ -223,7 +246,10 @@ export class Recorder {
         samples: rec.samples,
         deviceSamples: rec.deviceSamples,
       }),
-      stopReason: reason, // 'converged' | 'timeout' | 'maxEpochs' | 'manual'
+      stopReason: reason,
+      // 収束判定を働かせていたか。停止サマリで「未収束」と「収束判定なし」を
+      // 書き分けるのに要る（自動停止 OFF のときは未収束ではない。仕様 2）。
+      autoStop: rec.autoStop,
       // この測定区間の受信品質（開始時点との差分）。取りこぼし確認用。
       rxStats: this.getRxStats ? diffRxStats(this.getRxStats(), rec.rxStart) : null,
     };
@@ -264,15 +290,17 @@ export class Recorder {
             cep50: st.cep50,
             cep95: st.cep95,
             stopReason: pending.stopReason,
+            autoStop: pending.autoStop,
             rxStats: pending.rxStats,
             rawLines: pending.rawNmea ? pending.rawNmea.length : null,
             rawTruncated: pending.rawTruncated || 0,
-            // 一覧で M10S と並べて見せるための比較値
+            // 一覧で GNSS受信機 と並べて見せるための比較値
             ...(dst ? { deviceDrms: dst.drms, deviceCount: dst.count } : {}),
           }
         : {
             count: 0,
             stopReason: pending.stopReason,
+            autoStop: pending.autoStop,
             rxStats: pending.rxStats,
             rawLines: pending.rawNmea ? pending.rawNmea.length : null,
             rawTruncated: pending.rawTruncated || 0,
@@ -289,7 +317,7 @@ export class Recorder {
     };
     // 生NMEA行は取ったときだけ足す（OFF の記録の形は従来どおり）
     if (pending.rawNmea) point.rawNmea = pending.rawNmea;
-    // 端末内蔵GNSS を取れたときだけ足す
+    // Android内蔵GNSS を取れたときだけ足す
     if (dst) {
       point.deviceSamples = pending.deviceSamples;
       point.deviceStats = dst;

@@ -2,7 +2,7 @@
 // ストア構成は「調査日 → 地点 → 実データ」のツリー（js/survey.js のコメント参照）:
 //   surveys:  1日の調査（id='yyyy-mm-dd'。ツリーの根。ラベル・メモを付けられる）
 //   sessions: 記録した地点のメタ（surveyId + pointNo で根に紐付く。window に2系統の測定区間）
-//   points:   地点の実データ（M10S の samples[]/rawNmea[] と Android の deviceSamples[] を同じ1レコードに持つ）
+//   points:   地点の実データ（GNSS受信機の samples[]/rawNmea[] と Android内蔵の deviceSamples[] を同じ1レコードに持つ）
 //   settings: 端末の状態のみ（tileCacheMeta = 事前DLしたタイルの版・種別・日時）。
 //             設定タブの値は永続化しない（既定値は js/constants.js）
 // 2系統を同じ point に入れるので、「どの NMEA とどの Android データが対" になるか」は

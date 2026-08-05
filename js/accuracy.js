@@ -32,10 +32,29 @@ export function estimateHorizontalAccuracy(epoch, uere = 5) {
 // history: [{ t, lat, lon, drms }]（t=経過秒, 中心lat/lon, その時点のDRMS）を時刻昇順で受ける。
 // 累積統計は時間とともに必ず平坦化するため、累積値の単純な差分ではなく
 // 「直近 holdSec 秒の窓」での中心移動量と DRMS 変動幅で判定する。
-// 返り値: { stable: boolean, centerMoveM: number|null, drmsRangeM: number|null }
+//
+// 判定は2フェーズある。記録タブのプログレスバーもこの2段で表示する（仕様 8）:
+//   フェーズ1 品質の良いエポックが連続 holdSec 秒たまるまで（stableSec が伸びる。
+//             品質不良で履歴がリセットされると 0 に戻る＝バーも戻る）
+//   フェーズ2 窓がそろってから、中心移動 ≤ centerTolM かつ DRMS変動幅 ≤ drmsTol を待つ
+// バーの達成度を描けるよう、判定値だけでなく許容値も返す。
+// 返り値: { stable, stableSec, windowReady, centerMoveM, drmsRangeM, centerTolM, drmsTolM }
 export function evaluateConvergence(history, elapsedSec, opts) {
   const { minSec, holdSec, centerTolM, drmsTolAbsM, drmsTolPct } = opts;
-  if (elapsedSec < minSec || history.length < 2) return { stable: false, centerMoveM: null, drmsRangeM: null };
+  // 連続した良好データの長さ [秒]。呼び出し側で古い履歴を間引くため holdSec+α で頭打ちになる。
+  const stableSec = history.length ? Math.max(0, elapsedSec - history[0].t) : 0;
+  const cur = history.length ? history[history.length - 1] : null;
+  const drmsTolM = Math.max(drmsTolAbsM, drmsTolPct * (cur?.drms || 0));
+  const pending = {
+    stable: false,
+    stableSec,
+    windowReady: false,
+    centerMoveM: null,
+    drmsRangeM: null,
+    centerTolM,
+    drmsTolM,
+  };
+  if (elapsedSec < minSec || history.length < 2) return pending;
 
   const cutoff = elapsedSec - holdSec;
   // holdSec 秒前以前の基準点（連続した良好データが holdSec 以上あるか）
@@ -44,9 +63,8 @@ export function evaluateConvergence(history, elapsedSec, opts) {
     if (h.t <= cutoff) ref = h;
     else break;
   }
-  if (!ref) return { stable: false, centerMoveM: null, drmsRangeM: null }; // 窓を満たしていない
+  if (!ref) return pending; // 窓を満たしていない（フェーズ1）
 
-  const cur = history[history.length - 1];
   const { latM, lonM } = metersPerDegree(cur.lat);
   const centerMoveM = Math.hypot((cur.lon - ref.lon) * lonM, (cur.lat - ref.lat) * latM);
 
@@ -54,9 +72,8 @@ export function evaluateConvergence(history, elapsedSec, opts) {
   const drmsVals = win.map((h) => h.drms).filter((v) => v != null);
   const drmsRangeM = drmsVals.length ? Math.max(...drmsVals) - Math.min(...drmsVals) : 0;
 
-  const drmsTol = Math.max(drmsTolAbsM, drmsTolPct * (cur.drms || 0));
-  const stable = centerMoveM <= centerTolM && drmsRangeM <= drmsTol;
-  return { stable, centerMoveM, drmsRangeM };
+  const stable = centerMoveM <= centerTolM && drmsRangeM <= drmsTolM;
+  return { ...pending, stable, windowReady: true, centerMoveM, drmsRangeM };
 }
 
 function mean(arr) {
@@ -172,12 +189,12 @@ export function offsetBetween(from, to) {
   };
 }
 
-// 端末内蔵GNSS サンプル群の集計（仕様 4-8）。
-// ばらつきは M10S と同じ定義（computeStaticStats）で出し、比較に要る3項目を足す:
+// Android内蔵GNSS サンプル群の集計（仕様 4-8）。
+// ばらつきは GNSS受信機と同じ定義（computeStaticStats）で出し、比較に要る3項目を足す:
 //   avgAccuracy   Geolocation の accuracy（68%円半径）の平均。DRMS とは定義が違う参考値
 //   dupCount      直前と完全に同じ座標だった点数。OS が静止中の更新を間引くと
 //                 ばらつきが過小評価される（＝内蔵の方が優秀に見える）ため必ず示す
-//   offsetFromRef 基準（M10S）の中心から見た中心のズレ。真の誤差ではなく相対値
+//   offsetFromRef 基準（GNSS受信機）の中心から見た中心のズレ。真の誤差ではなく相対値
 export function computeDeviceStats(samples, refCenter = null) {
   const st = computeStaticStats(samples || []);
   if (!st) return null;

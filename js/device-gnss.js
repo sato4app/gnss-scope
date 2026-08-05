@@ -1,4 +1,4 @@
-// 端末内蔵GNSS（OS の測位）の並行取得。M10S を記録している同じ区間・同じ場所で
+// Android内蔵GNSS（OS の測位）の並行取得。GNSS受信機を記録している同じ区間・同じ場所で
 // もう1系統サンプルを集め、DRMS の比較対象にする（仕様 4-8）。
 //
 // 注意：ブラウザから取れるのは Geolocation API の測位結果だけで、生 NMEA・衛星情報・
@@ -10,8 +10,11 @@
 
 const WATCH_OPTIONS = { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 };
 
-// 状態 → 記録タブ「端末内蔵GNSS」行の表示ラベル
+// 状態 → 記録タブの散布図凡例に出す表示ラベル。
+// 1点も取れていないときは点数の代わりにこれを出し、「OFF なのか許可されていないのか」が
+// 現地で分かるようにする（仕様 1）。off は設定で並行取得を切っている状態。
 const STATUS_LABELS = {
+  off: '取得OFF（設定で有効にできます）',
   idle: '待機中',
   watching: '取得中',
   denied: '未許可（端末の位置情報を許可してください）',
@@ -27,7 +30,6 @@ export class DeviceGnss {
     this.onSample = onSample || (() => {});
     this.onStatus = onStatus || (() => {});
     this.watchId = null;
-    this.paused = false;
     this.status = 'idle';
     this._onPosition = this._onPosition.bind(this);
     this._onError = this._onError.bind(this);
@@ -48,7 +50,6 @@ export class DeviceGnss {
       this._setStatus('unsupported');
       return;
     }
-    this.paused = false;
     this._setStatus('idle');
     this.watchId = navigator.geolocation.watchPosition(this._onPosition, this._onError, WATCH_OPTIONS);
   }
@@ -62,19 +63,13 @@ export class DeviceGnss {
     this._setStatus('idle');
   }
 
-  // 画面OFF / バックグラウンド中は捨てる（M10S 側の一時停止と歩調を合わせる）
-  setPaused(paused) {
-    this.paused = paused;
-  }
-
   _onPosition(pos) {
     this._setStatus('watching');
-    if (this.paused) return;
     const c = pos.coords;
     this.onSample({
       // t は「OS が測位を確定した時刻」。maximumAge:0 でも Fused Location は
       // 数秒前に確定した fix を返すことがあり、受け取った時刻とは一致しない。
-      // 区間の突き合わせには受信時刻 recvAt を使う（M10S 側の recvAt と同じ役割）。
+      // 区間の突き合わせには受信時刻 recvAt を使う（GNSS受信機側の recvAt と同じ役割）。
       t: pos.timestamp,
       recvAt: Date.now(),
       lat: c.latitude,

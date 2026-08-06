@@ -2,10 +2,10 @@
 // 「アプリのバージョン」（sw.js の APP_VERSION）の確認・更新。
 // 設定値は settings オブジェクトを直接書き換えるだけで、永続化はしない。
 // 既定値は js/constants.js が唯一の出所で、リロードするとそこへ戻る。
-// 同じタブ内でも、タイル事前DL は tile-cache.js、モック配信は connect-ui.js、
+// 同じタブ内でも、タイル事前DL は map.js、モック配信は connect-ui.js、
 // Wake Lock 表示は record-ui.js が担当する（機能ごとにまとめる方針）。
 import { $ } from './view-utils.js';
-import { DEFAULT_SETTINGS } from './constants.js';
+import { DEFAULT_SETTINGS, PHOTO_EDGE_OPTIONS } from './constants.js';
 
 // sw.js の版数 APP_VERSION（'yyyy-mm-dd.n' 形式）を読み取る
 const VERSION_RE = /APP_VERSION\s*=\s*'([^']+)'/;
@@ -23,53 +23,52 @@ function versionOrder(v) {
 }
 
 export function initSettingsUI({ settings, mapView, onPhotoLimitChange }) {
+  // 写真の長辺の選択肢は js/constants.js の PHOTO_EDGE_OPTIONS が唯一の出所。
+  // 画面にも直書きしないよう、ラジオはここで組み立てる。
+  $('photoedge-options').innerHTML = PHOTO_EDGE_OPTIONS.map(
+    (px) => `<label><input type="radio" name="photoedge" value="${px}">${px}</label>`
+  ).join('');
+
   // ---- 設定行 ----
-  // [入力要素 id, settings のキー, 入力値 → 保存値の変換] を1か所に集約する
-  const NUMBER_ROWS = [
-    ['set-uere', 'uere', (v, d) => Math.max(1, v || d)],
-    ['set-minsec', 'minSec', (v, d) => Math.max(0, v >= 0 ? v : d)],
-    ['set-maxsec', 'maxSec', (v) => Math.max(0, v || 0)],
-    ['set-maxepochs', 'maxEpochs', (v) => Math.max(0, v || 0)],
-    // 写真は端末内に貯まり続けるので、上限は現実的な範囲へ丸める（0 = 写真を使わない）
-    ['set-photomax', 'photoMaxCount', (v) => Math.min(20, Math.max(0, v || 0))],
-  ];
-  // 値を持つラジオ（選択肢が決まっているもの）。[name, settings のキー, 値の変換]
-  const RADIO_ROWS = [
-    ['maptype', 'mapType', (v) => v, (v) => mapView.setBaseLayer(v)],
-    ['photoedge', 'photoMaxEdge', (v) => +v, null],
-  ];
-  const CHECK_ROWS = [
-    ['set-autostop', 'autoStop', null],
-    ['set-beep', 'beep', null],
-    ['set-devgnss', 'deviceGnss', null],
-    ['set-saveraw', 'saveRawNmea', null],
-    ['set-track', 'trackEnabled', (on) => mapView.setTrackEnabled(on)],
+  // [種類, 入力の指定（id / ラジオの name）, settings のキー, 入力値→保存値, 保存後の反映]
+  // 種類ごとに読み書きするプロパティが違うだけなので、定義テーブル ＋ 1ループで配線する。
+  const NUMBER = 'number';
+  const CHECK = 'check';
+  const RADIO = 'radio';
+  const ROWS = [
+    [NUMBER, 'set-uere', 'uere', (v, d) => Math.max(1, v || d)],
+    [NUMBER, 'set-minsec', 'minSec', (v, d) => Math.max(0, v >= 0 ? v : d)],
+    [NUMBER, 'set-maxsec', 'maxSec', (v) => Math.max(0, v || 0)],
+    [NUMBER, 'set-maxepochs', 'maxEpochs', (v) => Math.max(0, v || 0)],
+    // 写真は端末内に貯まり続けるので、上限は現実的な範囲へ丸める（0 = 写真を使わない）。
+    // 0 にすると写真UIごと消えるため、記録タブへ知らせる。
+    [NUMBER, 'set-photomax', 'photoMaxCount', (v) => Math.min(20, Math.max(0, v || 0)), () => onPhotoLimitChange?.()],
+    [CHECK, 'set-autostop', 'autoStop'],
+    [CHECK, 'set-beep', 'beep'],
+    [CHECK, 'set-devgnss', 'deviceGnss'],
+    [CHECK, 'set-saveraw', 'saveRawNmea'],
+    [CHECK, 'set-track', 'trackEnabled', null, (on) => mapView.setTrackEnabled(on)],
+    [RADIO, 'maptype', 'mapType', (v) => v, (v) => mapView.setBaseLayer(v)],
+    [RADIO, 'photoedge', 'photoMaxEdge', (v) => +v],
   ];
 
-  for (const [id, key, normalize] of NUMBER_ROWS) {
-    $(id).value = settings[key];
-    $(id).addEventListener('change', (e) => {
-      settings[key] = normalize(+e.target.value, DEFAULT_SETTINGS[key]);
-      $(id).value = settings[key];
-      // 上限枚数を 0 にすると写真UIごと消えるため、記録タブへ知らせる
-      if (key === 'photoMaxCount') onPhotoLimitChange?.();
-    });
-  }
+  for (const [kind, target, key, parse, apply] of ROWS) {
+    const inputs =
+      kind === RADIO ? [...document.querySelectorAll(`input[name="${target}"]`)] : [$(target)];
 
-  for (const [id, key, apply] of CHECK_ROWS) {
-    $(id).checked = settings[key];
-    $(id).addEventListener('change', (e) => {
-      settings[key] = e.target.checked;
-      if (apply) apply(settings[key]);
-    });
-  }
+    // 現在値を画面へ
+    if (kind === RADIO) for (const el of inputs) el.checked = el.value === String(settings[key]);
+    else if (kind === CHECK) inputs[0].checked = settings[key];
+    else inputs[0].value = settings[key];
 
-  for (const [name, key, parse, apply] of RADIO_ROWS) {
-    const current = document.querySelector(`input[name="${name}"][value="${settings[key]}"]`);
-    if (current) current.checked = true;
-    for (const radio of document.querySelectorAll(`input[name="${name}"]`)) {
-      radio.addEventListener('change', (e) => {
-        settings[key] = parse(e.target.value);
+    for (const el of inputs) {
+      el.addEventListener('change', () => {
+        if (kind === CHECK) settings[key] = el.checked;
+        else if (kind === RADIO) settings[key] = parse(el.value);
+        else {
+          settings[key] = parse(+el.value, DEFAULT_SETTINGS[key]);
+          el.value = settings[key]; // 丸めた値を画面へ戻す
+        }
         apply?.(settings[key]);
       });
     }

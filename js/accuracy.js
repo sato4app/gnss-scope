@@ -80,7 +80,9 @@ function mean(arr) {
   return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
 }
 
-function median(arr) {
+// 中央値（外れ値に引きずられない代表値）。集計の中心値と、
+// 2系統の時計オフセット（survey.js）で共用する。
+export function median(arr) {
   if (!arr.length) return null;
   const s = [...arr].sort((a, b) => a - b);
   const m = s.length >> 1;

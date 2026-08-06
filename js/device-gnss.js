@@ -26,9 +26,10 @@ const STATUS_LABELS = {
 export const deviceStatusText = (status) => STATUS_LABELS[status] || status;
 
 export class DeviceGnss {
-  constructor({ onSample, onStatus } = {}) {
+  // status は記録タブの凡例が読む（1点も来ないときに理由を出すため）。
+  // 変化の通知は要らない（記録中は次のエポックで凡例ごと描き直される）。
+  constructor({ onSample } = {}) {
     this.onSample = onSample || (() => {});
-    this.onStatus = onStatus || (() => {});
     this.watchId = null;
     this.status = 'idle';
     this._onPosition = this._onPosition.bind(this);
@@ -39,18 +40,14 @@ export class DeviceGnss {
     return !!(typeof navigator !== 'undefined' && navigator.geolocation);
   }
 
-  get isRunning() {
-    return this.watchId != null;
-  }
-
   // 記録開始時に呼ぶ。許可ダイアログはこの中の watchPosition で出る。
   start() {
     if (this.watchId != null) return;
     if (!DeviceGnss.isSupported()) {
-      this._setStatus('unsupported');
+      this.status = 'unsupported';
       return;
     }
-    this._setStatus('idle');
+    this.status = 'idle';
     this.watchId = navigator.geolocation.watchPosition(this._onPosition, this._onError, WATCH_OPTIONS);
   }
 
@@ -60,11 +57,11 @@ export class DeviceGnss {
       navigator.geolocation.clearWatch(this.watchId);
       this.watchId = null;
     }
-    this._setStatus('idle');
+    this.status = 'idle';
   }
 
   _onPosition(pos) {
-    this._setStatus('watching');
+    this.status = 'watching';
     const c = pos.coords;
     this.onSample({
       // t は「OS が測位を確定した時刻」。maximumAge:0 でも Fused Location は
@@ -84,12 +81,6 @@ export class DeviceGnss {
 
   _onError(err) {
     const BY_CODE = { 1: 'denied', 2: 'unavailable', 3: 'timeout' };
-    this._setStatus(BY_CODE[err.code] || 'unavailable');
-  }
-
-  _setStatus(status) {
-    if (this.status === status) return;
-    this.status = status;
-    this.onStatus(status);
+    this.status = BY_CODE[err.code] || 'unavailable';
   }
 }

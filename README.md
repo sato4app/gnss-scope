@@ -120,13 +120,12 @@ Claude Code の Stop フック（`~/.claude/settings.json`）から `--hook`（=
 index.html / manifest.json / sw.js     アプリシェル・PWA・Service Worker
 css/style.css                          ダークUI（ステータスバー / ページ / タブバー）
 js/
-  app.js             エントリ：受信パイプラインと各タブの結線 ＋ 中断停止の猶予判定
+  app.js             エントリ：受信パイプラインと各タブの結線
   constants.js       設定の既定値と2系統の表示名・色（永続化しないため、ここが唯一の出所）
-  view-utils.js      画面共通（DOM ショートハンド・タブ切替・表示フォーマッタ・停止サマリ）
+  view-utils.js      画面共通（DOM ショートハンド・タブ切替・表示フォーマッタ・測位結果テキスト）
   ── 受信 ──
   transport.js       受信経路：BLE(NUS) 接続・自動再接続 ＋ 開発用モック配信
-  nmea.js            行復元（LineBuffer）＋ NMEA 解析（GGA/RMC/GSA/GSV/VTG/GST/$PPICO）
-  epoch.js           同一時刻センテンス群 → 1エポック
+  nmea.js            行復元（LineBuffer）→ NMEA 解析 → エポック確定（EpochAssembler）
   stream-stats.js    受信品質統計（取りこぼしの確認）
   ── 解析・記録 ──
   accuracy.js        水平精度推定・DRMS/CEP 集計・収束判定
@@ -139,11 +138,12 @@ js/
   file-io.js         CSV / GPX / JSON 出力と JSON 取込
   ── 画面（タブごと） ──
   connect-ui.js      接続タブ（connect / disconnect / 受信品質 / モック切替）
-  record-ui.js       記録タブ（record / stop / save / load・進捗バー・凡例・一覧・Wake Lock）
+  record-ui.js       記録タブ（record / stop / save・進捗バー・凡例・現在の測位値・Wake Lock）
+  session-list-ui.js 記録一覧（調査日ツリー・編集・エクスポート・取込・容量警告）
+  photo-ui.js        地点の写真（縮小・JPEG 圧縮 ＋ 追加/削除/サムネイル）
   analysis-ui.js     解析タブ（SkyPlot / SNR / DOP / DRMS、ライブ↔読込切替）
-  map.js             地図タブ（Leaflet ＋ 地理院地図・読込データ表示）
+  map.js             地図タブ（Leaflet ＋ 地理院地図・読込データ表示）＋ オフラインタイル事前DL
   settings-ui.js     設定タブ（各種設定・アプリ更新確認）
-  tile-cache.js      オフラインタイル事前ダウンロード（設定タブ内）
 data/                                  タイルマニフェスト・GeoJSON
 vendor/leaflet/                        Leaflet（オフライン用にローカル配置）
 micropython/main.py                    Pico W 側ファーム（ダムパイプ）

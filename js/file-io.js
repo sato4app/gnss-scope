@@ -5,7 +5,7 @@
 // いずれも外部送信はしない。
 //   単体   { app:'gnss-scope', format:1, session, point }
 //   バンドル { app:'gnss-scope', format:2, survey, points:[{session, point}] }
-import { escapeMarkup } from './view-utils.js';
+import { escapeMarkup, localStamp } from './view-utils.js';
 import { computeStaticStats, computeDeviceStats } from './accuracy.js';
 import { nextPointNo, surveyIdOf } from './survey.js';
 import { SERIES } from './constants.js';
@@ -33,14 +33,6 @@ function isoOrEmpty(ms) {
   return ms != null ? new Date(ms).toISOString() : '';
 }
 
-// ローカル時刻 'yyyy-mm-dd HH:MM:SS'（対応表を人が見て突き合わせるための列）
-function localStamp(ms) {
-  if (ms == null) return '';
-  const d = new Date(ms);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
-
 // CSV の1セル。null/undefined は空、区切り文字や引用符を含む文字列は引用する。
 function csvCell(v) {
   if (v == null) return '';
@@ -59,6 +51,12 @@ function avgUsedSnr(s) {
   return vals.length ? +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : null;
 }
 
+// CSV 末尾に付ける「# キー,値」のコメント塊（地点の識別・集計値・比較値で共用）。
+// 空行 ＋ 見出し ＋ 各行の形を1か所に決めておく。
+function commentBlock(title, pairs) {
+  return ['', `# ${title}`, ...pairs.map(([key, value]) => `# ${key},${csvCell(value ?? '')}`)];
+}
+
 // ---- CSV（BOM 付き UTF-8。Excel でそのまま開ける） ----
 export function exportCSV(session, point) {
   const header = [
@@ -75,39 +73,29 @@ export function exportCSV(session, point) {
   const lines = [header.join(','), ...rows];
 
   // 地点の識別（どの調査日の何番地点か）をファイル単体でも分かるようにする
-  lines.push('');
-  lines.push('# 地点');
-  for (const [key, value] of [
+  lines.push(...commentBlock('地点', [
     ['survey_id', session.surveyId], ['point_no', session.pointNo],
     ['label', session.label], ['memo', session.memo],
     ['started_at_local', localStamp(session.createdAt)], ['ended_at_local', localStamp(session.endedAt)],
-  ]) {
-    lines.push(`# ${key},${csvCell(value)}`);
-  }
+  ]));
 
   // 集計値もコメント行として付ける
   const st = point?.stats;
   if (st) {
-    lines.push('');
-    lines.push('# 集計値');
-    for (const [key, value] of [
+    lines.push(...commentBlock('集計値', [
       ['center_lat', st.center.lat], ['center_lon', st.center.lon],
       ['std_east_m', st.stdEastM], ['std_north_m', st.stdNorthM],
       ['drms_m', st.drms], ['2drms_m', st.drms2],
       ['cep50_m', st.cep50], ['cep95_m', st.cep95],
       ['alt_mean_m', st.altMean], ['alt_std_m', st.altStd],
       ['epochs', st.count],
-    ]) {
-      lines.push(`# ${key},${value}`);
-    }
+    ]));
   }
 
   // Android内蔵GNSS の比較値もコメント行に付ける（レートが違うため行としては混ぜない）
   const dst = point?.deviceStats;
   if (dst) {
-    lines.push('');
-    lines.push(`# 比較: ${SERIES.device.label}（同時取得）`);
-    for (const [key, value] of [
+    lines.push(...commentBlock(`比較: ${SERIES.device.label}（同時取得）`, [
       ['device_epochs', dst.count],
       ['device_center_lat', dst.center.lat], ['device_center_lon', dst.center.lon],
       ['device_std_east_m', dst.stdEastM], ['device_std_north_m', dst.stdNorthM],
@@ -117,9 +105,7 @@ export function exportCSV(session, point) {
       ['device_duplicate_points', dst.dupCount],
       ['device_center_offset_m', dst.offsetFromRef?.distM],
       ['device_center_offset_bearing_deg', dst.offsetFromRef?.bearingDeg],
-    ]) {
-      lines.push(`# ${key},${value ?? ''}`);
-    }
+    ]));
   }
 
   download(`${safeName(session.label)}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');

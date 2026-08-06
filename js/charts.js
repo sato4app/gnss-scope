@@ -38,9 +38,9 @@ function drawCross(ctx, cx, cy, half) {
   ctx.stroke();
 }
 
-function strokeCircle(ctx, cx, cy, r, color = GRID_COLOR) {
+function strokeCircle(ctx, cx, cy, r, color = GRID_COLOR, width = 1) {
   ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = width;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
@@ -186,15 +186,9 @@ export class SkyPlotView extends CanvasView {
       const color = CONSTELLATION_COLORS[sat.sys] || CONSTELLATION_COLORS.unknown;
       const rad = (sat.snr != null ? 4 + Math.min(sat.snr, 50) / 10 : 4) * k;
 
-      if (sat.used) {
-        fillCircle(ctx, x, y, rad, color);
-      } else {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(x, y, rad, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      // 使用中＝塗りつぶし / 可視のみ＝中抜き
+      if (sat.used) fillCircle(ctx, x, y, rad, color);
+      else strokeCircle(ctx, x, y, rad, color, 1.5);
 
       if (showPrn) {
         ctx.fillStyle = 'rgba(255,255,255,0.7)';
@@ -407,15 +401,8 @@ export class ScatterPlotView extends CanvasView {
       }
       const x = cx + o.e * scale;
       const y = cy - o.n * scale;
-      if (filled) {
-        fillCircle(ctx, x, y, 2.5, series.point);
-      } else {
-        ctx.strokeStyle = series.point;
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      if (filled) fillCircle(ctx, x, y, 2.5, series.point);
+      else strokeCircle(ctx, x, y, 3.5, series.point, 1.2);
     }
     return outside;
   }
@@ -444,7 +431,6 @@ function drawOutMarker(ctx, cx, cy, angleRad, rPix, color) {
 // 系列ごとに向きを変え、かつ中心から最低 10 px は離す。
 function drawStatCircle(ctx, cx, cy, r, scale, color, label, dir = { x: 1, y: 1 }) {
   if (r == null || !(r > 0)) return;
-  ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 3]);
   strokeCircle(ctx, cx, cy, r * scale, color);
   ctx.setLineDash([]);

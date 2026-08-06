@@ -15,7 +15,7 @@
 // 時刻軸について：受信機のサンプル t は GPS時刻(UTC)、内蔵のサンプル t は端末時計で、
 // 別々の時計である。区間の突き合わせは両者が共通に持つ端末時計（受信機側は recvAt）で行い、
 // GPS時刻との差は clockOffsetMs として別に残す（docs/design-202607.md 4.）。
-import { SERIES } from './constants.js';
+import { median } from './accuracy.js';
 
 const p2 = (n) => String(n).padStart(2, '0');
 
@@ -101,10 +101,7 @@ export function clockOffsetMs(samples) {
   for (const s of samples || []) {
     if (Number.isFinite(s?.recvAt) && Number.isFinite(s?.t)) diffs.push(s.recvAt - s.t);
   }
-  if (!diffs.length) return null;
-  diffs.sort((a, b) => a - b);
-  const m = diffs.length >> 1;
-  return diffs.length % 2 ? diffs[m] : (diffs[m - 1] + diffs[m]) / 2;
+  return median(diffs);
 }
 
 // 1地点ぶんの時間情報をまとめる（recorder.js が session.window に入れる形）。
@@ -114,6 +111,13 @@ export function clockOffsetMs(samples) {
 // 受信機の t は GPS時刻、内蔵の t は OS が測位を確定した時刻で、どちらも別の時計。
 // recvAt を持たない古い記録・取込データでは t にフォールバックする。
 const rxTime = (s) => s?.recvAt ?? s?.t;
+
+// サンプル列が実際にデータを返していた長さ [秒]（0〜1点なら 0）。
+// GNSS受信機の 1Hz と違って Android内蔵は OS が更新を間引くため、
+// 点数だけでは「何秒ぶんか」が分からない（記録タブの凡例。仕様 1）。
+export function spanSec(samples) {
+  return timeWindow(samples, rxTime)?.durationSec ?? 0;
+}
 
 export function buildWindow({ startedAt, endedAt, samples, deviceSamples }) {
   const gnss = timeWindow(samples, rxTime);
@@ -142,13 +146,6 @@ export function buildWindow({ startedAt, endedAt, samples, deviceSamples }) {
 }
 
 // ---- 地点の対応状況 ----
-
-export const PAIRING_LABELS = {
-  both: `${SERIES.gnss.label}＋${SERIES.device.label}`,
-  gnssOnly: `${SERIES.gnss.label}のみ`,
-  deviceOnly: `${SERIES.device.label}のみ`,
-  none: 'データなし',
-};
 
 // summary から「2系統が揃っているか」を判定する（一覧表示・保存前の警告に使う）
 export function pairingOf(summary) {

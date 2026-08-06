@@ -84,47 +84,85 @@ export class Storage {
     return this.db;
   }
 
-  // ---- surveys（調査日 = ツリーの根） ----
+  // ---- ストア操作の共通形 ----
+  // IndexedDB は「トランザクションを開く → ストアを取る → リクエストを Promise 化」の
+  // 3手が毎回要る。読み書きの一手ぶんずつをここに畳んでおく。
 
-  async putSurvey(survey) {
-    const tx = this.db.transaction('surveys', 'readwrite');
-    tx.objectStore('surveys').put(survey);
-    await txDone(tx);
-    return survey;
+  _store(name, mode = 'readonly') {
+    return this.db.transaction(name, mode).objectStore(name);
   }
 
-  async getSurvey(id) {
-    return reqToPromise(this.db.transaction('surveys').objectStore('surveys').get(id));
+  _get(name, key) {
+    return reqToPromise(this._store(name).get(key));
+  }
+
+  _getAll(name) {
+    return reqToPromise(this._store(name).getAll());
+  }
+
+  // index('bySession') など、副インデックス経由の一括取得。keysOnly=true なら鍵だけ。
+  _byIndex(name, indexName, key, { keysOnly = false } = {}) {
+    const idx = this._store(name).index(indexName);
+    return reqToPromise(keysOnly ? idx.getAllKeys(key) : idx.getAll(key));
+  }
+
+  async _put(name, value) {
+    const tx = this.db.transaction(name, 'readwrite');
+    tx.objectStore(name).put(value);
+    await txDone(tx);
+    return value;
+  }
+
+  async _delete(name, key) {
+    const tx = this.db.transaction(name, 'readwrite');
+    tx.objectStore(name).delete(key);
+    await txDone(tx);
+  }
+
+  // ---- surveys（調査日 = ツリーの根） ----
+
+  putSurvey(survey) {
+    return this._put('surveys', survey);
+  }
+
+  getSurvey(id) {
+    return this._get('surveys', id);
   }
 
   // 新しい調査日が先
   async getSurveys() {
-    const all = await reqToPromise(this.db.transaction('surveys').objectStore('surveys').getAll());
+    const all = await this._getAll('surveys');
     return all.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   }
 
-  // 記録開始時と確定時に呼ぶ。無ければ作り、あれば updatedAt だけ進める。
+  // 無ければ作り、あれば updatedAt だけ進めた調査日レコード（書き込みはしない）。
   // 調査日はラベル・メモを持たない（日付そのものが識別子で、書くことは地点側にある）。
-  async ensureSurvey(surveyId, createdAt = Date.now()) {
-    const existing = await this.getSurvey(surveyId);
-    const survey = existing
+  _surveyRecord(existing, id, createdAt) {
+    return existing
       ? { ...existing, updatedAt: nextUpdatedAt(existing) }
-      : { id: surveyId, createdAt, updatedAt: Date.now() };
-    await this.putSurvey(survey);
-    return survey;
+      : { id, createdAt, updatedAt: Date.now() };
+  }
+
+  // 既にある調査日にだけパッチを当てる（無ければ何もしない）
+  async _patchSurvey(surveyId, makePatch) {
+    const survey = await this.getSurvey(surveyId);
+    if (survey) await this.putSurvey({ ...survey, ...makePatch(survey) });
+  }
+
+  // 記録開始時と確定時に呼ぶ
+  async ensureSurvey(surveyId, createdAt = Date.now()) {
+    return this.putSurvey(this._surveyRecord(await this.getSurvey(surveyId), surveyId, createdAt));
   }
 
   // 中身が変わったことを調査日へ伝える（写真の増減など）。
   // updatedAt が exportedAt を追い越すと「未書き出し」に戻る。
-  async touchSurvey(surveyId) {
-    const survey = await this.getSurvey(surveyId);
-    if (survey) await this.putSurvey({ ...survey, updatedAt: nextUpdatedAt(survey) });
+  touchSurvey(surveyId) {
+    return this._patchSurvey(surveyId, (s) => ({ updatedAt: nextUpdatedAt(s) }));
   }
 
   // バンドルJSON を書き出した記録を残す。容量警告で「未書き出しぶん」を出すのに使う。
-  async markExported(surveyId) {
-    const survey = await this.getSurvey(surveyId);
-    if (survey) await this.putSurvey({ ...survey, exportedAt: Date.now() });
+  markExported(surveyId) {
+    return this._patchSurvey(surveyId, () => ({ exportedAt: Date.now() }));
   }
 
   // 端末内に貯まっている量 [バイト]。sessions だけで足りるので全件読んでも軽い。
@@ -143,8 +181,7 @@ export class Storage {
   }
 
   async getSessionsBySurvey(surveyId) {
-    const idx = this.db.transaction('sessions').objectStore('sessions').index('bySurvey');
-    const list = await reqToPromise(idx.getAll(surveyId));
+    const list = await this._byIndex('sessions', 'bySurvey', surveyId);
     return list.sort((a, b) => (a.pointNo ?? 0) - (b.pointNo ?? 0) || a.createdAt - b.createdAt);
   }
 
@@ -163,27 +200,21 @@ export class Storage {
   async deleteSurvey(surveyId) {
     const sessions = await this.getSessionsBySurvey(surveyId);
     for (const s of sessions) await this.deleteSession(s.id, { keepSurvey: true });
-
-    const tx = this.db.transaction('surveys', 'readwrite');
-    tx.objectStore('surveys').delete(surveyId);
-    await txDone(tx);
+    await this._delete('surveys', surveyId);
   }
 
   // ---- sessions（地点） ----
 
-  async putSession(session) {
-    const tx = this.db.transaction('sessions', 'readwrite');
-    tx.objectStore('sessions').put(session);
-    await txDone(tx);
-    return session;
+  putSession(session) {
+    return this._put('sessions', session);
   }
 
-  async getSession(id) {
-    return reqToPromise(this.db.transaction('sessions').objectStore('sessions').get(id));
+  getSession(id) {
+    return this._get('sessions', id);
   }
 
   async getSessions() {
-    const all = await reqToPromise(this.db.transaction('sessions').objectStore('sessions').getAll());
+    const all = await this._getAll('sessions');
     return all.sort((a, b) => b.createdAt - a.createdAt);
   }
 
@@ -208,9 +239,7 @@ export class Storage {
     if (keepSurvey) return;
     const surveyId = session?.surveyId || (session ? surveyIdOf(session.createdAt) : null);
     if (surveyId && !(await this.getSessionsBySurvey(surveyId)).length) {
-      const t = this.db.transaction('surveys', 'readwrite');
-      t.objectStore('surveys').delete(surveyId);
-      await txDone(t);
+      await this._delete('surveys', surveyId);
     }
   }
 
@@ -220,10 +249,7 @@ export class Storage {
   // 失敗したら記録を始めない（呼び出し側で握る）。
   // 根・枝・葉を 1 トランザクションで書き、途中で失敗して根だけ残る状態を作らない。
   async createDraft({ id, startedAt, surveyId }) {
-    const existing = await this.getSurvey(surveyId);
-    const survey = existing
-      ? { ...existing, updatedAt: nextUpdatedAt(existing) }
-      : { id: surveyId, createdAt: startedAt, updatedAt: Date.now() };
+    const survey = this._surveyRecord(await this.getSurvey(surveyId), surveyId, startedAt);
     const session = {
       id,
       type: 'record',
@@ -313,14 +339,12 @@ export class Storage {
   // ---- points / chunks（実データ） ----
 
   // 集計値だけの point レコード（チャンクを結合しない生の形）
-  async getPointRecords(sessionId) {
-    const idx = this.db.transaction('points').objectStore('points').index('bySession');
-    return reqToPromise(idx.getAll(sessionId));
+  getPointRecords(sessionId) {
+    return this._byIndex('points', 'bySession', sessionId);
   }
 
-  async getChunkKeys(sessionId) {
-    const idx = this.db.transaction('chunks').objectStore('chunks').index('bySession');
-    return reqToPromise(idx.getAllKeys(sessionId));
+  getChunkKeys(sessionId) {
+    return this._byIndex('chunks', 'bySession', sessionId, { keysOnly: true });
   }
 
   // 地点の実データを取り出す。チャンクを seq 順に結合し、従来と同じ形の point を返すので
@@ -328,8 +352,7 @@ export class Storage {
   async getPointsBySession(sessionId) {
     const points = await this.getPointRecords(sessionId);
     if (!points.length) return [];
-    const idx = this.db.transaction('chunks').objectStore('chunks').index('bySession');
-    const chunks = (await reqToPromise(idx.getAll(sessionId))).sort((a, b) => a.seq - b.seq);
+    const chunks = (await this._byIndex('chunks', 'bySession', sessionId)).sort((a, b) => a.seq - b.seq);
 
     const samples = [];
     const rawNmea = [];
@@ -356,15 +379,29 @@ export class Storage {
   // 表示のたびにデコードが要る）。サイズは session.summary.photoBytes にも積み、
   // 端末内の合計量を sessions だけで数えられるようにする。
 
-  async getPhotoKeys(sessionId) {
-    const idx = this.db.transaction('photos').objectStore('photos').index('bySession');
-    return reqToPromise(idx.getAllKeys(sessionId));
+  getPhotoKeys(sessionId) {
+    return this._byIndex('photos', 'bySession', sessionId, { keysOnly: true });
   }
 
   async getPhotos(sessionId) {
-    const idx = this.db.transaction('photos').objectStore('photos').index('bySession');
-    const list = await reqToPromise(idx.getAll(sessionId));
+    const list = await this._byIndex('photos', 'bySession', sessionId);
     return list.sort((a, b) => a.addedAt - b.addedAt);
+  }
+
+  // photos ストアの更新と、それに伴う session.summary（枚数・バイト数）の増減を
+  // 同じトランザクションで行う。枚数とバイト数を session 側にも持つのは、
+  // 一覧の各行や容量集計で photos ストアを引き直さずに済ませるため。
+  async _changePhotos(session, mutate, { count, bytes }) {
+    const tx = this.db.transaction(['photos', 'sessions'], 'readwrite');
+    mutate(tx.objectStore('photos'));
+    const summary = {
+      ...session.summary,
+      photoCount: Math.max(0, (session.summary?.photoCount || 0) + count),
+      photoBytes: Math.max(0, (session.summary?.photoBytes || 0) + bytes),
+    };
+    tx.objectStore('sessions').put({ ...session, summary });
+    await txDone(tx);
+    await this.touchSurvey(session.surveyId);
   }
 
   // 1枚追加する。seq は既存の最大＋1（削除しても採り直さないので id が衝突しない）。
@@ -374,38 +411,15 @@ export class Storage {
     const keys = await this.getPhotoKeys(sessionId);
     const seq = keys.reduce((max, k) => Math.max(max, +String(k).split('_').pop() || 0), 0) + 1;
     const photo = { id: `${sessionId}_ph${seq}`, sessionId, seq, blob, bytes: blob.size, w, h, addedAt: Date.now() };
-
-    // 枚数とバイト数は session 側にも持つ。一覧の各行や容量集計で
-    // photos ストアを引き直さずに済ませるため。
-    const tx = this.db.transaction(['photos', 'sessions'], 'readwrite');
-    tx.objectStore('photos').put(photo);
-    const summary = {
-      ...session.summary,
-      photoCount: (session.summary?.photoCount || 0) + 1,
-      photoBytes: (session.summary?.photoBytes || 0) + photo.bytes,
-    };
-    tx.objectStore('sessions').put({ ...session, summary });
-    await txDone(tx);
-    await this.touchSurvey(session.surveyId);
+    await this._changePhotos(session, (store) => store.put(photo), { count: 1, bytes: photo.bytes });
     return photo;
   }
 
   async deletePhoto(sessionId, photoId) {
     const session = await this.getSession(sessionId);
-    const photos = await this.getPhotos(sessionId);
-    const target = photos.find((p) => p.id === photoId);
+    const target = (await this.getPhotos(sessionId)).find((p) => p.id === photoId);
     if (!session || !target) return;
-
-    const tx = this.db.transaction(['photos', 'sessions'], 'readwrite');
-    tx.objectStore('photos').delete(photoId);
-    const summary = {
-      ...session.summary,
-      photoCount: Math.max(0, (session.summary?.photoCount || 0) - 1),
-      photoBytes: Math.max(0, (session.summary?.photoBytes || 0) - target.bytes),
-    };
-    tx.objectStore('sessions').put({ ...session, summary });
-    await txDone(tx);
-    await this.touchSurvey(session.surveyId);
+    await this._changePhotos(session, (store) => store.delete(photoId), { count: -1, bytes: -target.bytes });
   }
 
   // 取込（JSON）用：実データを 1 チャンクとして入れる。読み出し経路を 1 本にするため。
@@ -421,13 +435,11 @@ export class Storage {
   // 設定タブの値ではなく、端末の状態（tileCacheMeta）の保存に使う。
   // 設定値の既定は js/constants.js にあり、永続化しない。
   async getSetting(key, defaultValue = null) {
-    const rec = await reqToPromise(this.db.transaction('settings').objectStore('settings').get(key));
+    const rec = await this._get('settings', key);
     return rec ? rec.value : defaultValue;
   }
 
   async setSetting(key, value) {
-    const tx = this.db.transaction('settings', 'readwrite');
-    tx.objectStore('settings').put({ key, value });
-    await txDone(tx);
+    await this._put('settings', { key, value });
   }
 }

@@ -23,7 +23,7 @@
 // 記録タブの UI 配線（ボタン・表示）は record-ui.js 側。
 import { computeStaticStats, computeDeviceStats, evaluateConvergence } from './accuracy.js';
 import { diffRxStats } from './stream-stats.js';
-import { buildWindow, surveyIdOf } from './survey.js';
+import { buildWindow, spanSec, surveyIdOf } from './survey.js';
 
 // 収束自動停止の判定パラメータ（設定画面には出さないモジュール定数）
 const CONVERGENCE = { holdSec: 10, centerTolM: 0.3, drmsTolAbsM: 0.3, drmsTolPct: 0.05 };
@@ -50,20 +50,6 @@ const INSUFFICIENT = { minSec: 30, minCount: 10 };
 // 打ち切った場合は rawTruncated に本数を残し、記録が途中までであることを隠さない。
 // （フラッシュのたびにバッファを捨てるので、メモリ側の理由での上限ではなくなった。）
 const MAX_RAW_LINES = 20000;
-
-// サンプル列が実際にデータを返していた長さ [秒]。0〜1点なら 0。
-// 時刻軸は端末時計（recvAt）に揃える。2系統で共通に持つのはこれだけのため。
-function spanSecOf(samples) {
-  let min = Infinity;
-  let max = -Infinity;
-  for (const s of samples || []) {
-    const t = s?.recvAt ?? s?.t;
-    if (!Number.isFinite(t)) continue;
-    if (t < min) min = t;
-    if (t > max) max = t;
-  }
-  return max > min ? (max - min) / 1000 : 0;
-}
 
 // 品質ゲート：そのエポックを収束判定に使えるか（停止用途のみ。記録の蓄積条件は変えない）
 function qualityOk(epoch) {
@@ -203,7 +189,6 @@ export class Recorder {
       stats,
       convergence,
       device: this._deviceInfo(),
-      rawLines: rec.saveRaw ? rec.rawCount : null,
     });
 
     // まとまったら追記する。await しない（受信経路を待たせない）
@@ -242,15 +227,13 @@ export class Recorder {
   }
 
   // 収集状況表示用（記録タブの散布図凡例）。並行取得していなければ null。
-  // spanSec は内蔵が実際にデータを返していた長さ。GNSS受信機の 1Hz と違って
-  // OS が更新を間引くため、点数だけでは「何秒ぶんか」が分からない（仕様 1）。
   _deviceInfo() {
     const rec = this.current;
     if (!rec?.withDevice) return null;
     return {
       status: this.deviceGnss.status,
       count: rec.deviceSamples.length,
-      spanSec: spanSecOf(rec.deviceSamples),
+      spanSec: spanSec(rec.deviceSamples),
       stats: rec.deviceStats,
     };
   }
@@ -339,14 +322,7 @@ export class Recorder {
     };
     if (this.current.withDevice) this.deviceGnss.start();
     this._startStallTimer();
-    this.onUpdate({
-      count: 0,
-      elapsedSec: 0,
-      stats: null,
-      convergence: null,
-      device: this._deviceInfo(),
-      rawLines: saveRaw ? 0 : null,
-    });
+    this.onUpdate({ count: 0, elapsedSec: 0, stats: null, convergence: null, device: this._deviceInfo() });
     return this.current.id;
   }
 
@@ -409,7 +385,7 @@ export class Recorder {
       // Android内蔵GNSS の比較値（GNSS受信機の中心を基準にズレを出す）
       deviceStats,
       deviceStatus,
-      deviceSpanSec: spanSecOf(rec.deviceSamples),
+      deviceSpanSec: spanSec(rec.deviceSamples),
       startedAt: rec.startedAt,
       endedAt,
       stopReason: reason,

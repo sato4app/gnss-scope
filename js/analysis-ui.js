@@ -2,7 +2,7 @@
 // データソースは「ライブ（受信中の最新エポック）」と「読込データ（load した記録）」を
 // ラジオで切り替える。読込データはスライダで任意のエポックを選んで再現できる
 // （記録時に衛星リストも保存しているため、後からでもスカイプロット/SNR を描ける）。
-import { $, fmt, FIX_MODE, satsText, formatStats, formatCompare, formatWindow, sessionMeta } from './view-utils.js';
+import { $, fmt, FIX_MODE, satsText, formatResult, renderOutside, sessionMeta } from './view-utils.js';
 import { CONSTELLATION_COLORS, CONSTELLATION_LABELS } from './nmea.js';
 import { SkyPlotView, SnrChartView, ScatterPlotView } from './charts.js';
 import { estimateHorizontalAccuracy } from './accuracy.js';
@@ -109,31 +109,23 @@ export function initAnalysisUI({ settings, getLatestEpoch }) {
     const cmp = st && dst && $('an-cmp').checked ? dst : null;
     $('an-scatter-legend').hidden = !cmp;
 
-    const outside = scatterView.update(st, cmp);
-    renderOutside(outside);
-    if (st) {
-      const meta = source === 'loaded' ? sessionMeta(loaded.session) : { label: '記録中/直近の記録' };
-      // 読込データでは 2系統の測定区間（対応の検証）も出す
-      const windowText = source === 'loaded' ? formatWindow(loaded.session.window, loaded.session.summary) : '';
-      $('an-drms').textContent = [formatStats(meta, st), cmp ? formatCompare(st, cmp) : '', windowText]
-        .filter(Boolean)
-        .join('\n');
-    } else {
+    renderOutside($('an-outside'), scatterView.update(st, cmp));
+    if (!st) {
       $('an-drms').textContent =
         source === 'loaded'
           ? '読込データに集計値がありません'
           : '記録（record）を開始するか、保存済みの記録を読み込むと表示されます';
+      return;
     }
-  }
-
-  // 表示半径の外に出た点（散布図では縁に▲で描かれている）。記録タブと同じ表記。
-  function renderOutside(outside) {
-    const parts = [];
-    if (outside?.gnss) parts.push(`${SERIES.gnss.label} ${outside.gnss}点`);
-    if (outside?.device) parts.push(`${SERIES.device.label} ${outside.device}点`);
-    const el = $('an-outside');
-    el.hidden = !parts.length;
-    el.textContent = parts.length ? `表示範囲の外側に ${parts.join(' / ')}（▲は方向）` : '';
+    // 読込データでは 2系統の測定区間（対応の検証）も出す
+    const isLoaded = source === 'loaded';
+    $('an-drms').textContent = formatResult({
+      meta: isLoaded ? sessionMeta(loaded.session) : { label: '記録中/直近の記録' },
+      stats: st,
+      deviceStats: cmp,
+      window: isLoaded ? loaded.session.window : null,
+      summary: isLoaded ? loaded.session.summary : null,
+    });
   }
 
   // 読込データのエポック位置表示

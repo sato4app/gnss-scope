@@ -29,7 +29,6 @@ export function initTabUI({ onShow, initial = 'connect' } = {}) {
   show(initial);
 
   return {
-    show,
     get current() {
       return current;
     },
@@ -38,8 +37,19 @@ export function initTabUI({ onShow, initial = 'connect' } = {}) {
 
 // ---- 数値・文字列の整形 ----
 
+// 2桁ゼロ詰め（時刻・日付の整形で共用）
+export const pad2 = (n) => String(n).padStart(2, '0');
+
 // 数値を「—」フォールバック付きで整形（null/undefined は — に）
 export const fmt = (v, digits = 1, unit = '') => (v == null ? '—' : v.toFixed(digits) + unit);
+
+// バイト数 → 表示文字列。自前で数えた概算値なので「約」を付けて使う。
+export function formatBytes(bytes) {
+  if (!(bytes > 0)) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1) return `${mb.toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 // 記号のエスケープ。innerHTML 埋め込みと GPX(XML) 出力で共用する
 // （&#39; / &quot; は XML でも有効な文字参照）。
@@ -118,8 +128,15 @@ export function stopSummaryText({ stopReason, durationSec, count, autoStop }) {
 export function localTime(ms) {
   if (ms == null) return '—';
   const d = new Date(ms);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+
+// 時刻[ms] → ローカルの 'yyyy-mm-dd HH:MM:SS'（CSV / NMEA の見出しで人が突き合わせる列）。
+// null は空文字（CSV の空セル）にする。
+export function localStamp(ms) {
+  if (ms == null) return '';
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${localTime(ms)}`;
 }
 
 // 割合(0〜1) → 百分率表示
@@ -222,6 +239,29 @@ export function formatWindow(window, summary) {
     lines.push(`※生NMEAは上限に達したため ${summary.rawTruncated} 行を保存していません`);
   }
   return lines.join('\n');
+}
+
+// 測位結果テキスト（集計 → 2系統の比較 → 測定区間の対応）。
+// 停止直後・保存済み・解析タブの3か所が同じ並びを出すので、組み立てはここに1本化する。
+// window / summary を渡さなければ測定区間ブロックは出ない（ライブ表示）。
+export function formatResult({ meta, stats, deviceStats, window, summary }) {
+  return [
+    formatStats(meta, stats),
+    stats && deviceStats ? formatCompare(stats, deviceStats) : '',
+    formatWindow(window, summary),
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+// 散布図の表示範囲の外に出た点の件数（図では縁に▲で描かれている）。
+// 記録タブ・解析タブが同じ表記で出す。outside は ScatterPlotView.update() の戻り値。
+export function renderOutside(el, outside) {
+  const parts = [];
+  if (outside?.gnss) parts.push(`${GNSS} ${outside.gnss}点`);
+  if (outside?.device) parts.push(`${DEVICE} ${outside.device}点`);
+  el.hidden = !parts.length;
+  el.textContent = parts.length ? `表示範囲の外側に ${parts.join(' / ')}（▲は方向）` : '';
 }
 
 // 保存済みセッション → formatStats / formatWindow / stopSummaryText に渡す meta

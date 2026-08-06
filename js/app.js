@@ -4,15 +4,13 @@
 // 行・エポックは StreamStats（受信品質統計）にも分岐する。$PPICO は統計のみ。
 // 画面は「接続 / 記録 / 解析 / 地図 / 設定」のタブ切替。各タブの DOM 操作は *-ui.js 側。
 import { $, initTabUI, fixBadge } from './view-utils.js';
-import { LineBuffer, parseSentence } from './nmea.js';
-import { EpochAssembler } from './epoch.js';
+import { LineBuffer, parseSentence, EpochAssembler } from './nmea.js';
 import { StreamStats } from './stream-stats.js';
 import { estimateHorizontalAccuracy } from './accuracy.js';
 import { Storage } from './storage.js';
 import { Recorder } from './recorder.js';
 import { DeviceGnss } from './device-gnss.js';
-import { MapView, initMapUI } from './map.js';
-import { TileCache, initTileUI } from './tile-cache.js';
+import { MapView, initMapUI, TileCache, initTileUI } from './map.js';
 import { initConnectUI } from './connect-ui.js';
 import { initRecordUI } from './record-ui.js';
 import { initAnalysisUI } from './analysis-ui.js';
@@ -49,10 +47,7 @@ async function main() {
   let mapUI = null;
 
   // 記録中だけ動かす Android内蔵GNSS（DRMS の比較対象。仕様 4-8）
-  const deviceGnss = new DeviceGnss({
-    onSample: (sample) => recorder.addDeviceSample(sample),
-    onStatus: (status) => recordUI?.onDeviceStatus(status),
-  });
+  const deviceGnss = new DeviceGnss({ onSample: (sample) => recorder.addDeviceSample(sample) });
 
   const recorder = new Recorder(storage, {
     getRxStats: () => streamStats.snapshot(), // 記録1回分の受信品質を summary に残す
@@ -136,18 +131,13 @@ async function main() {
         // 記録中なら受信したそのままの行も残す（パースの前に分岐させる。
         // チェックサムNG行・$PPICO も「生」の一部として保存対象に含める）
         recorder.addRawLine(line);
-        const parsed = parseLine(line);
-        if (parsed) assembler.add(parsed);
+        // $PPICO は統計のみ（エポックへ回さない）。チェックサム不正も計数して捨てる。
+        const parsed = parseSentence(line);
+        if (!streamStats.addLine(parsed)) assembler.add(parsed);
       }
     },
     onFlush: () => assembler.flush(),
   });
-
-  // $PPICO は統計のみ（エポックへ回さない）。チェックサム不正も計数して捨てる。
-  function parseLine(line) {
-    const parsed = parseSentence(line);
-    return streamStats.addLine(parsed) ? null : parsed;
-  }
 
   // 非表示中の canvas / 地図はサイズが確定しないため、表示時に描き直す
   const tabUI = initTabUI({

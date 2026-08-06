@@ -1,11 +1,11 @@
 // Service Worker：アプリシェルのプリキャッシュ＋地理院地図タイルのキャッシュ。
 // タイルは cache-first（オフラインでもキャッシュ済範囲の地図が出る）。
-// タイルキャッシュ名は js/tile-cache.js の事前ダウンロードと共有する。
+// タイルキャッシュ名は js/map.js の事前ダウンロード（TileCache）と共有する。
 
 // 版数 'yyyy-mm-dd.n'（更新日 ＋ 同日内の連番。日付が変わったら 1 に戻す）。
 // アプリを更新したら必ず改める（この値が変わることで新SWのインストールが走る）。
 // 設定タブの「アプリのバージョン」はこの値をそのまま表示する（js/settings-ui.js）。
-const APP_VERSION = '2026-08-06.3';
+const APP_VERSION = '2026-08-06.4';
 // キャッシュ名は接頭辞つき（activate の掃除で他のキャッシュと区別するため）
 const SHELL_CACHE = `gnss-scope-shell-${APP_VERSION}`;
 const TILE_CACHE = 'gsi-tiles';
@@ -15,12 +15,11 @@ const APP_SHELL = [
   './index.html',
   './manifest.json',
   './css/style.css',
-  // 受信: 経路 → 行復元/解析 → エポック → 受信品質
+  // 受信: 経路 → 行復元/解析/エポック → 受信品質
   './js/app.js',
   './js/constants.js',
   './js/transport.js',
   './js/nmea.js',
-  './js/epoch.js',
   './js/stream-stats.js',
   // 解析・記録
   './js/accuracy.js',
@@ -31,15 +30,15 @@ const APP_SHELL = [
   './js/survey.js',
   './js/storage.js',
   './js/file-io.js',
-  './js/photos.js',
   // 画面
   './js/view-utils.js',
   './js/connect-ui.js',
   './js/record-ui.js',
+  './js/session-list-ui.js',
+  './js/photo-ui.js',
   './js/analysis-ui.js',
   './js/map.js',
   './js/settings-ui.js',
-  './js/tile-cache.js',
   './vendor/leaflet/leaflet.js',
   './vendor/leaflet/leaflet.css',
   './vendor/leaflet/images/marker-icon.png',

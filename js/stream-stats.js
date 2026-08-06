@@ -60,7 +60,7 @@ export class StreamStats {
     if (!this._picoBase) this._picoBase = { txok: p.txok, lines: this.lines };
   }
 
-  // 確定エポックごとに呼ぶ（epoch.js の onEpoch から）
+  // 確定エポックごとに呼ぶ（nmea.js の EpochAssembler.onEpoch から）
   addEpoch(epoch) {
     this.epochs++;
     if (epoch.gsvMissing) this.gsvMissing += epoch.gsvMissing;

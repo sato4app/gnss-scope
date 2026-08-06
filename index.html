@@ -241,12 +241,9 @@
       <label class="set-row">1地点あたりの上限枚数（0=写真を使わない）
         <input id="set-photomax" type="number" min="0" max="20" step="1">
       </label>
+      <!-- 選択肢は js/constants.js の PHOTO_EDGE_OPTIONS から js/settings-ui.js が組み立てる -->
       <div class="set-row">縮小後の長辺 [px]
-        <span class="radio-group">
-          <label><input type="radio" name="photoedge" value="1280">1280</label>
-          <label><input type="radio" name="photoedge" value="640">640</label>
-          <label><input type="radio" name="photoedge" value="320">320</label>
-        </span>
+        <span class="radio-group" id="photoedge-options"></span>
       </div>
       <div class="note-dim">撮った写真は取り込むときに縮小して保存します。1枚あたりの目安は 1280px で 200KB、640px で 60KB、320px で 20KB 程度です（被写体によって変わります）。端末内に貯まり続けるため、大きくすると容量警告が早く出ます。</div>
 

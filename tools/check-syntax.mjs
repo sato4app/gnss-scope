@@ -37,22 +37,21 @@ try {
 }
 
 // ---- 純粋ロジックの簡易テスト ----
-const { parseSentence, validateChecksum, LineBuffer } = await import(pathToFileURL(resolve(jsDir, 'nmea.js')).href);
+const { parseSentence, validateChecksum, LineBuffer, EpochAssembler } = await import(
+  pathToFileURL(resolve(jsDir, 'nmea.js')).href
+);
 const { computeStaticStats, computeDeviceStats, offsetBetween, estimateHorizontalAccuracy, metersPerDegree, evaluateConvergence } =
   await import(pathToFileURL(resolve(jsDir, 'accuracy.js')).href);
 const { holdDecision } = await import(pathToFileURL(resolve(jsDir, 'charts.js')).href);
-const { formatStats, formatCompare, formatWindow, bearingText } = await import(
-  pathToFileURL(resolve(jsDir, 'view-utils.js')).href
-);
+const { formatStats, formatCompare, formatWindow, formatResult, bearingText, formatBytes, localStamp } =
+  await import(pathToFileURL(resolve(jsDir, 'view-utils.js')).href);
 const {
   surveyIdOf, pointLabel, nextPointNo, timeWindow, windowOverlap, clockOffsetMs,
-  groupBySurvey, surveySummary, pairingOf, countInWindow,
+  groupBySurvey, surveySummary, pairingOf, countInWindow, spanSec,
 } = await import(pathToFileURL(resolve(jsDir, 'survey.js')).href);
 const { compareRow, COMPARE_HEADER, importSessionFile } = await import(pathToFileURL(resolve(jsDir, 'file-io.js')).href);
 const { Recorder, buildSummary, isInsufficient } = await import(pathToFileURL(resolve(jsDir, 'recorder.js')).href);
 const { isConfirmed, isExported, sessionBytes } = await import(pathToFileURL(resolve(jsDir, 'storage.js')).href);
-const { formatBytes } = await import(pathToFileURL(resolve(jsDir, 'photos.js')).href);
-const { EpochAssembler } = await import(pathToFileURL(resolve(jsDir, 'epoch.js')).href);
 const { StreamStats, diffRxStats } = await import(pathToFileURL(resolve(jsDir, 'stream-stats.js')).href);
 // 系統名は js/constants.js が唯一の出所。表示文言のテストもそこを参照する
 // （機種を替えて SERIES を書き換えたときに、テストだけ古い名前で落ちないようにする）。
@@ -284,6 +283,11 @@ const outside = windowOverlap({ startedAt: 0, endedAt: 60000 }, { startedAt: 900
 assert(outside.coverDevice === 0, '区間の重なり: 1点が区間外なら0%');
 assert(countInWindow([{ t: 5 }, { t: 50 }, { t: 500 }], { startedAt: 0, endedAt: 100 }) === 2, '区間内の件数を数える');
 
+// 実測の長さ [秒]（記録タブの凡例。timeWindow と同じ時刻軸＝端末時計で測る）
+assert(spanSec([{ recvAt: 1000 }, { recvAt: 6000 }]) === 5, '実測の長さ: recvAt の範囲');
+assert(spanSec([{ t: 1000, recvAt: 9000 }, { t: 2000, recvAt: 12000 }]) === 3, '実測の長さ: recvAt を優先する');
+assert(spanSec([]) === 0 && spanSec([{ recvAt: 1 }]) === 0, '実測の長さ: 0〜1点は 0');
+
 // 端末時計 − GPS時刻（2系統を同じ時間軸へ並べ直すための補正量）
 assert(clockOffsetMs([{ t: 1000, recvAt: 1200 }, { t: 2000, recvAt: 2300 }, { t: 3000, recvAt: 3200 }]) === 200, '時計オフセット: 中央値');
 assert(clockOffsetMs([{ t: 1000 }]) === null, '時計オフセット: 対にならなければ null');
@@ -329,6 +333,25 @@ const snrStats = computeStaticStats([
 ]);
 assert(Math.abs(snrStats.avgSnrUsed - 35) < 1e-9, '集計: 使用衛星の平均C/N0（未使用衛星は除く）');
 assert(formatStats({ label: '未保存の記録' }, snrStats).includes('DRMS'), '集計テキスト: 未保存の記録でも生成できる');
+
+// 測位結果テキストの組み立て（停止直後・保存済み・解析タブが共用する1本の関数）
+const resultText = formatResult({
+  meta: { label: 'x' },
+  stats: snrStats,
+  deviceStats: null,
+  window: { startedAt: 0, endedAt: 1000, durationSec: 1, gnss: { startedAt: 0, endedAt: 1000, durationSec: 1, count: 2 } },
+  summary: { rawLines: 10 },
+});
+assert(resultText.includes('DRMS') && resultText.includes('測定区間'), '測位結果テキスト: 集計＋測定区間を並べる');
+assert(!resultText.includes('比較:'), '測位結果テキスト: 比較データが無ければ比較ブロックを出さない');
+assert(
+  !formatResult({ meta: { label: 'x' }, stats: snrStats }).includes('測定区間'),
+  '測位結果テキスト: window なし（ライブ）は測定区間を出さない'
+);
+
+// CSV / NMEA 見出しのローカル時刻（view-utils に1本化。null は空セル）
+assert(localStamp(new Date(2026, 6, 8, 9, 5, 3).getTime()) === '2026-07-08 09:05:03', 'ローカル時刻: yyyy-mm-dd HH:MM:SS');
+assert(localStamp(null) === '', 'ローカル時刻: null は空');
 // 停止理由は測位結果の見出し（stopSummaryText）が持つ。集計テキストにも出すと二重になる
 assert(
   !formatStats({ label: 'x', stopReason: 'converged' }, snrStats).includes('自動停止'),

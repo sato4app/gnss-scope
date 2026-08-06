@@ -50,12 +50,13 @@ const {
 } = await import(pathToFileURL(resolve(jsDir, 'survey.js')).href);
 const { compareRow, COMPARE_HEADER, importSessionFile } = await import(pathToFileURL(resolve(jsDir, 'file-io.js')).href);
 const { Recorder, buildSummary, isInsufficient } = await import(pathToFileURL(resolve(jsDir, 'recorder.js')).href);
-const { isConfirmed } = await import(pathToFileURL(resolve(jsDir, 'storage.js')).href);
+const { isConfirmed, isExported, sessionBytes } = await import(pathToFileURL(resolve(jsDir, 'storage.js')).href);
+const { formatBytes } = await import(pathToFileURL(resolve(jsDir, 'photos.js')).href);
 const { EpochAssembler } = await import(pathToFileURL(resolve(jsDir, 'epoch.js')).href);
 const { StreamStats, diffRxStats } = await import(pathToFileURL(resolve(jsDir, 'stream-stats.js')).href);
 // 系統名は js/constants.js が唯一の出所。表示文言のテストもそこを参照する
 // （機種を替えて SERIES を書き換えたときに、テストだけ古い名前で落ちないようにする）。
-const { SERIES } = await import(pathToFileURL(resolve(jsDir, 'constants.js')).href);
+const { SERIES, PHOTO_EDGE_OPTIONS, DEFAULT_SETTINGS } = await import(pathToFileURL(resolve(jsDir, 'constants.js')).href);
 const { stopSummaryText } = await import(pathToFileURL(resolve(jsDir, 'view-utils.js')).href);
 
 function assert(cond, msg) {
@@ -338,7 +339,7 @@ assert(
 // 保存先の擬似ストア（storage.js と同じ呼び出し面・同じ結合規則を持たせる）。
 // failAppend を立てると追記が失敗する（記録中の書き込み失敗の挙動を確かめるため）。
 function makeFakeStorage() {
-  const db = { surveys: new Map(), sessions: new Map(), points: new Map(), chunks: new Map() };
+  const db = { surveys: new Map(), sessions: new Map(), points: new Map(), chunks: new Map(), photos: new Map() };
   const bySession = (map, sid) => [...map.values()].filter((v) => v.sessionId === sid);
   const store = {
     db,
@@ -352,6 +353,58 @@ function makeFakeStorage() {
     getSessionsBySurvey: async (id) => [...db.sessions.values()].filter((s) => s.surveyId === id),
     getPointRecords: async (sid) => bySession(db.points, sid),
     getChunkKeys: async (sid) => bySession(db.chunks, sid).map((c) => c.id),
+    getPhotoKeys: async (sid) => bySession(db.photos, sid).map((c) => c.id),
+    getPhotos: async (sid) => bySession(db.photos, sid).sort((a, b) => a.addedAt - b.addedAt),
+    touchSurvey: async (id) => {
+      const sv = db.surveys.get(id);
+      if (sv) db.surveys.set(id, { ...sv, updatedAt: Math.max(Date.now(), (sv.updatedAt || 0) + 1) });
+    },
+    markExported: async (id) => {
+      const sv = db.surveys.get(id);
+      if (sv) db.surveys.set(id, { ...sv, exportedAt: Date.now() });
+    },
+    // 写真：枚数とバイト数を session 側にも持たせる（一覧・容量集計で引き直さないため）
+    addPhoto: async (sid, { blob, w, h }) => {
+      const session = db.sessions.get(sid);
+      const seq = bySession(db.photos, sid).length + 1;
+      const photo = { id: `${sid}_ph${seq}`, sessionId: sid, seq, blob, bytes: blob.size, w, h, addedAt: Date.now() + seq };
+      db.photos.set(photo.id, photo);
+      db.sessions.set(sid, {
+        ...session,
+        summary: {
+          ...session.summary,
+          photoCount: (session.summary?.photoCount || 0) + 1,
+          photoBytes: (session.summary?.photoBytes || 0) + photo.bytes,
+        },
+      });
+      await store.touchSurvey(session.surveyId);
+      return photo;
+    },
+    deletePhoto: async (sid, photoId) => {
+      const session = db.sessions.get(sid);
+      const target = db.photos.get(photoId);
+      if (!session || !target) return;
+      db.photos.delete(photoId);
+      db.sessions.set(sid, {
+        ...session,
+        summary: {
+          ...session.summary,
+          photoCount: Math.max(0, (session.summary?.photoCount || 0) - 1),
+          photoBytes: Math.max(0, (session.summary?.photoBytes || 0) - target.bytes),
+        },
+      });
+      await store.touchSurvey(session.surveyId);
+    },
+    getStorageUsage: async () => {
+      let total = 0;
+      let unexported = 0;
+      for (const s of db.sessions.values()) {
+        const bytes = sessionBytes(s);
+        total += bytes;
+        if (!isExported(db.surveys.get(s.surveyId))) unexported += bytes;
+      }
+      return { total, unexported };
+    },
     getSurvey: async (id) => db.surveys.get(id) || null,
     createDraft: async ({ id, startedAt, surveyId }) => {
       await store.ensureSurvey(surveyId, startedAt);
@@ -396,6 +449,7 @@ function makeFakeStorage() {
       db.sessions.delete(id);
       for (const p of bySession(db.points, id)) db.points.delete(p.id);
       for (const c of bySession(db.chunks, id)) db.chunks.delete(c.id);
+      for (const f of bySession(db.photos, id)) db.photos.delete(f.id);
     },
     // チャンクを seq 順に結合して従来と同じ形の point を返す（storage.js と同じ規則）
     getPointsBySession: async (sid) => {
@@ -567,6 +621,46 @@ for (let i = 0; i < 15; i++) recFail.addEpoch(mkEpoch(i, 34.9));
 await new Promise((r) => setTimeout(r, 0));
 assert(failStore.db.chunks.size === 0, '記録: 追記に失敗したらチャンクは残らない');
 assert(!recFail.isRecording, '記録: 追記が連続 3 回失敗したら打ち切る');
+
+// ---- 端末内のデータ量（自前で数える） ----
+// 記録データの実量だけを数えたいので、navigator.storage.estimate（オリジン全体＝
+// 地図タイル込み）ではなく、書き込むときに数えた概算値を積む。
+const sized = await fakeStorage.getSession(draftId);
+assert(sized.summary.bytes > 0, '容量: 停止時に summary へ概算バイト数を残す');
+assert(sessionBytes(sized) === sized.summary.bytes, '容量: 写真が無ければ実データぶんだけ');
+assert(formatBytes(0) === '0 MB' && formatBytes(512 * 1024).endsWith('KB'), '容量: 1MB 未満は KB 表示');
+assert(formatBytes(52 * 1024 * 1024) === '52.0 MB', '容量: MB 表示');
+
+// 写真の長辺は決め打ちの選択肢から選ぶ（自由入力にしない）
+assert(PHOTO_EDGE_OPTIONS.length === 3 && PHOTO_EDGE_OPTIONS.every((v) => v > 0), '写真: 長辺の選択肢を持つ');
+assert(PHOTO_EDGE_OPTIONS.includes(DEFAULT_SETTINGS.photoMaxEdge), '写真: 既定の長辺は選択肢のどれか');
+
+// 書き出し記録：書き出した後に地点や写真が増えれば「未書き出し」に戻る
+const usageSurvey = sized.surveyId;
+assert(!isExported(fakeStorage.db.surveys.get(usageSurvey)), '書き出し: 既定は未書き出し');
+await fakeStorage.markExported(usageSurvey);
+assert(isExported(fakeStorage.db.surveys.get(usageSurvey)), '書き出し: markExported で書き出し済みになる');
+const usageAfterExport = await fakeStorage.getStorageUsage();
+assert(usageAfterExport.unexported === 0, '書き出し: 書き出し済みは未書き出し量に数えない');
+
+// 写真：枚数とバイト数を session 側に持ち、削除で戻る
+const fakeBlob = { size: 200 * 1024 };
+await fakeStorage.addPhoto(draftId, { blob: fakeBlob, w: 1280, h: 960 });
+await fakeStorage.addPhoto(draftId, { blob: fakeBlob, w: 1280, h: 960 });
+const withPhotos = await fakeStorage.getSession(draftId);
+assert(withPhotos.summary.photoCount === 2, '写真: 枚数を session に持つ');
+assert(sessionBytes(withPhotos) === withPhotos.summary.bytes + 400 * 1024, '写真: 容量に写真ぶんを足す');
+assert(!isExported(fakeStorage.db.surveys.get(usageSurvey)), '写真: 追加すると未書き出しに戻る');
+const photoList = await fakeStorage.getPhotos(draftId);
+await fakeStorage.deletePhoto(draftId, photoList[0].id);
+const afterPhotoDel = await fakeStorage.getSession(draftId);
+assert(afterPhotoDel.summary.photoCount === 1, '写真: 削除で枚数が戻る');
+assert(afterPhotoDel.summary.photoBytes === 200 * 1024, '写真: 削除でバイト数も戻る');
+
+// 地点を消せば写真も消える
+const photoOnlyId = draftId;
+await fakeStorage.deleteSession(photoOnlyId);
+assert([...fakeStorage.db.photos.values()].every((f) => f.sessionId !== photoOnlyId), '写真: 地点を消すと写真も消える');
 
 // データ不足の判定（30 秒以上で 10 点未満なら破棄を確認する）
 assert(isInsufficient({ durationSec: 30, count: 3 }), 'データ不足: 30秒で3点は不足');

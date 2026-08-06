@@ -191,7 +191,7 @@ export function exportSurveyJSON(survey, entries) {
     survey,
     points: (entries || []).filter((e) => e.point).map(({ session, point }) => ({ session, point })),
   };
-  download(`${safeName(survey.label || survey.id)}_bundle.json`, JSON.stringify(data), 'application/json');
+  download(`${safeName(survey.id)}_bundle.json`, JSON.stringify(data), 'application/json');
 }
 
 // ---- 調査日の対応表 CSV（1行1地点） ----
@@ -269,8 +269,6 @@ export function exportSurveyCompareCSV(survey, entries) {
   const lines = [COMPARE_HEADER.join(','), ...rows];
   lines.push('');
   lines.push(`# survey,${csvCell(survey.id)}`);
-  lines.push(`# label,${csvCell(survey.label || survey.id)}`);
-  lines.push(`# memo,${csvCell(survey.memo || '')}`);
   lines.push(`# points,${rows.length}`);
   const gnss = SERIES.gnss.label;
   const dev = SERIES.device.label;
@@ -279,7 +277,7 @@ export function exportSurveyCompareCSV(survey, entries) {
   lines.push(`# dev_in_record_window: ${dev}のサンプルのうち record→stop の記録区間内にあった点数`);
   lines.push('# clock_offset_ms: 端末時計 − GPS時刻（2系統を同じ時間軸へ並べ直すときの補正量）');
   lines.push(`# dev_fix_lag_ms: ${dev}の 受信時刻 − 測位確定時刻（大きいほど古い fix を返している）`);
-  download(`${safeName(survey.label || survey.id)}_compare.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  download(`${safeName(survey.id)}_compare.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
 }
 
 // ---- 取込 ----
@@ -351,6 +349,8 @@ async function importOne(src, survey, storage) {
   const data = { samples: src.point.samples };
   if (rawNmea) data.rawNmea = rawNmea;
   if (deviceSamples?.length) data.deviceSamples = deviceSamples;
+  // 端末内サイズは記録と同じ数え方（容量警告に取込ぶんも乗るように）
+  session.summary = { ...session.summary, bytes: JSON.stringify(data).length };
 
   await storage.putImported(session, point, data);
   return { session, point: { ...point, ...data } };

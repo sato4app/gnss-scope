@@ -123,7 +123,11 @@ async function main() {
   });
   analysisUI = initAnalysisUI({ settings, getLatestEpoch: () => latestEpoch });
   mapUI = initMapUI({ mapView });
-  const settingsUI = initSettingsUI({ settings, mapView });
+  const settingsUI = initSettingsUI({
+    settings,
+    mapView,
+    onPhotoLimitChange: () => recordUI.refreshPhotoUi(),
+  });
   initTileUI({ tileCache: new TileCache(), storage, getMapType: () => settings.mapType });
   initConnectUI({
     streamStats,
@@ -152,7 +156,10 @@ async function main() {
       if (page === 'map') mapUI.onShow();
       else if (page === 'analysis') analysisUI.refresh();
       else if (page === 'record') recordUI.onShow();
-      else if (page === 'settings') settingsUI.refreshVersion(); // 開くたびにバージョンを確認
+      else if (page === 'settings') {
+        settingsUI.refreshVersion(); // 開くたびにバージョンを確認
+        recordUI.refreshStorageWarning(); // 端末内のデータ量も開くたびに数え直す
+      }
     },
   });
 

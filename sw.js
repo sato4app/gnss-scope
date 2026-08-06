@@ -5,7 +5,7 @@
 // 版数 'yyyy-mm-dd.n'（更新日 ＋ 同日内の連番。日付が変わったら 1 に戻す）。
 // アプリを更新したら必ず改める（この値が変わることで新SWのインストールが走る）。
 // 設定タブの「アプリのバージョン」はこの値をそのまま表示する（js/settings-ui.js）。
-const APP_VERSION = '2026-08-06.1';
+const APP_VERSION = '2026-08-06.3';
 // キャッシュ名は接頭辞つき（activate の掃除で他のキャッシュと区別するため）
 const SHELL_CACHE = `gnss-scope-shell-${APP_VERSION}`;
 const TILE_CACHE = 'gsi-tiles';
@@ -31,6 +31,7 @@ const APP_SHELL = [
   './js/survey.js',
   './js/storage.js',
   './js/file-io.js',
+  './js/photos.js',
   // 画面
   './js/view-utils.js',
   './js/connect-ui.js',

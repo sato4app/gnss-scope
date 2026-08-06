@@ -149,6 +149,9 @@ stable  = (centerMoveM <= centerTolM) && (drmsRangeM <= drmsTol)
 | `FLUSH_EPOCHS` | 5 | 定数（`js/recorder.js`） | 記録中の追記の粒度（何エポックを 1 件にまとめるか） |
 | `MAX_FLUSH_FAILURES` | 3 | 定数（`js/recorder.js`） | 追記がこの回数続けて失敗したら打ち切る |
 | `INSUFFICIENT` | 30 秒 / 10 点 | 定数（`js/recorder.js`） | この時間を超えて点数が足りなければ破棄を確認する |
+| `photoMaxCount` | 5 枚 | 設定（`js/constants.js`） | 1地点あたりの写真の上限（0 で写真を使わない） |
+| `photoMaxEdge` | 1280 px | 設定（`js/constants.js`） | 写真を縮小するときの長辺。`PHOTO_EDGE_OPTIONS`（1280/640/320）から選ぶ |
+| `STORAGE_LIMITS` | 50 / 100 MB | 定数（`js/constants.js`） | 警告を出し始める量 / 想定上限 |
 
 定数は画面の煩雑化を避けるためモジュール定数（`js/recorder.js` の `CONVERGENCE`）とし、
 設定画面には出さない。一方「設定」種別の既定値は `js/constants.js` の `DEFAULT_SETTINGS`
@@ -360,4 +363,5 @@ RADIUS_STEPS = [1, 1.5, 2, 3, 4, 5, 6, 8] × 10ⁿ
 | 記録フロー | 開始時の下書き作成・5 エポックごとの追記・停止で集計値を書く・確定で採番 |
 | 下書き | 番号を消費しない・削除でチャンクも消える・0 点は自動削除・追記失敗で打ち切る |
 | データ不足 | 30 秒 / 10 点の判定（0 点・30 秒未満は別扱い） |
+| 容量 | 停止時に概算バイト数を残す・MB/KB の表示・写真ぶんの加減算・書き出し記録 |
 | 既定地点名 | 同日連番の採番規則 |

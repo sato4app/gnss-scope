@@ -105,7 +105,7 @@ function toSample(epoch) {
 
 // 集計値 → session.summary（一覧・エクスポート・停止サマリが読む形）。
 // stats が無い（有効エポック0点）ときも stopReason だけは残す。
-export function buildSummary({ stats, deviceStats, stopReason, autoStop, rxStats, rawLines, rawTruncated }) {
+export function buildSummary({ stats, deviceStats, stopReason, autoStop, rxStats, rawLines, rawTruncated, bytes }) {
   const base = {
     count: stats?.count ?? 0,
     stopReason,
@@ -113,6 +113,8 @@ export function buildSummary({ stats, deviceStats, stopReason, autoStop, rxStats
     rxStats,
     rawLines,
     rawTruncated: rawTruncated || 0,
+    // 端末内サイズ [バイト]。追記のたびに数えた概算値の合計（容量警告の材料）
+    bytes: bytes || 0,
   };
   if (!stats) return base;
   return {
@@ -269,12 +271,18 @@ export class Recorder {
     rec.bufDevice.length = 0;
     rec.epochsSinceFlush = 0;
 
+    // 端末内サイズはここで数える。停止時に測ろうとすると書き終えたチャンクを
+    // 読み戻すことになるので、手元にあるうちに数えておく（20KB の JSON 化は誤差の範囲）。
+    // IndexedDB の実使用量そのものではなく、容量警告に使える程度の概算値。
+    rec.bytes += JSON.stringify(data).length;
+
     const progress = {
       endedAt: Date.now(),
       summary: {
         count: rec.samples.length,
         rawLines: rec.saveRaw ? rec.rawCount : null,
         deviceCount: rec.deviceSamples.length,
+        bytes: rec.bytes,
       },
     };
     return this.storage.appendChunk(rec.id, rec.seq++, data, progress).then(
@@ -314,6 +322,7 @@ export class Recorder {
       bufRaw: [],
       bufDevice: [],
       seq: 0, // チャンクの通し番号
+      bytes: 0, // 書き出した実データの概算バイト数（容量警告用）
       epochsSinceFlush: 0,
       flushFailures: 0,
       maxSec,
@@ -388,6 +397,7 @@ export class Recorder {
       rxStats: this.getRxStats ? diffRxStats(this.getRxStats(), rec.rxStart) : null,
       rawLines: rec.saveRaw ? rec.rawCount : null,
       rawTruncated: rec.rawTruncated,
+      bytes: rec.bytes,
     });
 
     const pending = {

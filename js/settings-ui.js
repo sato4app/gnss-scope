@@ -1,4 +1,4 @@
-// 設定タブの配線：測位・記録パラメータ / 地図種別 / ライブ軌跡 ON-OFF と、
+// 設定タブの配線：測位・記録パラメータ / 地点の写真 / 地図種別 / ライブ軌跡 ON-OFF と、
 // 「アプリのバージョン」（sw.js の APP_VERSION）の確認・更新。
 // 設定値は settings オブジェクトを直接書き換えるだけで、永続化はしない。
 // 既定値は js/constants.js が唯一の出所で、リロードするとそこへ戻る。
@@ -22,7 +22,7 @@ function versionOrder(v) {
   return m ? +(m[1] + m[2] + m[3] + m[4].padStart(4, '0')) : 0;
 }
 
-export function initSettingsUI({ settings, mapView }) {
+export function initSettingsUI({ settings, mapView, onPhotoLimitChange }) {
   // ---- 設定行 ----
   // [入力要素 id, settings のキー, 入力値 → 保存値の変換] を1か所に集約する
   const NUMBER_ROWS = [
@@ -30,6 +30,13 @@ export function initSettingsUI({ settings, mapView }) {
     ['set-minsec', 'minSec', (v, d) => Math.max(0, v >= 0 ? v : d)],
     ['set-maxsec', 'maxSec', (v) => Math.max(0, v || 0)],
     ['set-maxepochs', 'maxEpochs', (v) => Math.max(0, v || 0)],
+    // 写真は端末内に貯まり続けるので、上限は現実的な範囲へ丸める（0 = 写真を使わない）
+    ['set-photomax', 'photoMaxCount', (v) => Math.min(20, Math.max(0, v || 0))],
+  ];
+  // 値を持つラジオ（選択肢が決まっているもの）。[name, settings のキー, 値の変換]
+  const RADIO_ROWS = [
+    ['maptype', 'mapType', (v) => v, (v) => mapView.setBaseLayer(v)],
+    ['photoedge', 'photoMaxEdge', (v) => +v, null],
   ];
   const CHECK_ROWS = [
     ['set-autostop', 'autoStop', null],
@@ -44,6 +51,8 @@ export function initSettingsUI({ settings, mapView }) {
     $(id).addEventListener('change', (e) => {
       settings[key] = normalize(+e.target.value, DEFAULT_SETTINGS[key]);
       $(id).value = settings[key];
+      // 上限枚数を 0 にすると写真UIごと消えるため、記録タブへ知らせる
+      if (key === 'photoMaxCount') onPhotoLimitChange?.();
     });
   }
 
@@ -55,12 +64,15 @@ export function initSettingsUI({ settings, mapView }) {
     });
   }
 
-  document.querySelector(`input[name="maptype"][value="${settings.mapType}"]`).checked = true;
-  for (const radio of document.querySelectorAll('input[name="maptype"]')) {
-    radio.addEventListener('change', (e) => {
-      settings.mapType = e.target.value;
-      mapView.setBaseLayer(settings.mapType);
-    });
+  for (const [name, key, parse, apply] of RADIO_ROWS) {
+    const current = document.querySelector(`input[name="${name}"][value="${settings[key]}"]`);
+    if (current) current.checked = true;
+    for (const radio of document.querySelectorAll(`input[name="${name}"]`)) {
+      radio.addEventListener('change', (e) => {
+        settings[key] = parse(e.target.value);
+        apply?.(settings[key]);
+      });
+    }
   }
 
   // ---- アプリのバージョン確認・更新 ----

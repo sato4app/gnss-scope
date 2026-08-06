@@ -1,9 +1,10 @@
 // IndexedDB ラッパ（端末内のみ・オフライン完結。サーバ同期なし）。
 // ストア構成は「調査日 → 地点 → 実データ」のツリー（js/survey.js のコメント参照）:
-//   surveys:  1日の調査（id='yyyy-mm-dd'。ツリーの根。ラベル・メモを付けられる）
+//   surveys:  1日の調査（id='yyyy-mm-dd'。ツリーの根。日付そのものが識別子で、テキストは持たない）
 //   sessions: 記録した地点のメタ（surveyId + pointNo で根に紐付く。window に2系統の測定区間）
 //   points:   地点の集計値（stats のみ。実データ配列は持たない）
 //   chunks:   地点の実データ（記録中に 5 エポックずつ追記される。samples/rawNmea/deviceSamples）
+//   photos:   地点に付けた写真（縮小済み JPEG の Blob。1地点 5 枚まで）
 //   settings: 端末の状態のみ（tileCacheMeta = 事前DLしたタイルの版・種別・日時）。
 //             設定タブの値は永続化しない（既定値は js/constants.js）
 // 2系統を同じ chunk に入れるので、「どの NMEA とどの Android データが対か」は
@@ -15,12 +16,24 @@
 import { surveyIdOf } from './survey.js';
 
 const DB_NAME = 'gnssScopeDB';
+// v4: photos ストアを追加。調査日からラベル・メモを外した。
 // v3: chunks ストアを追加し、実データを points から分離。
-//     v2 以前のデータは移行せず作り直す（開発中のデータしか無いため。移行コードを持たない）。
-const DB_VERSION = 3;
+// 旧版のデータは移行せず作り直す（開発中のデータしか無いため。移行コードを持たない）。
+const DB_VERSION = 4;
 
 // 確定済み（＝地点として数える）か。下書きは集計・エクスポートの対象外。
 export const isConfirmed = (session) => session?.status !== 'draft';
+
+// 書き出し済みか。書き出した後に地点や写真が増えていれば「未書き出し」に戻る
+// （updatedAt は ensureSurvey / touchSurvey で進む）。
+export const isExported = (survey) => survey?.exportedAt != null && survey.exportedAt >= survey.updatedAt;
+
+// 1地点ぶんの端末内サイズ [バイト]（実データ ＋ 写真）。自前で数えた概算値。
+export const sessionBytes = (session) => (session?.summary?.bytes || 0) + (session?.summary?.photoBytes || 0);
+
+// updatedAt は必ず前の値より進める。書き出した直後（同じミリ秒内）に写真を足しても
+// 「未書き出し」へ戻れるようにするため、端末時計の分解能に依存させない。
+const nextUpdatedAt = (survey) => Math.max(Date.now(), (survey?.updatedAt || 0) + 1);
 
 function reqToPromise(req) {
   return new Promise((res, rej) => {
@@ -56,6 +69,7 @@ export class Storage {
         db.createObjectStore('sessions', { keyPath: 'id' }).createIndex('bySurvey', 'surveyId');
         db.createObjectStore('points', { keyPath: 'id' }).createIndex('bySession', 'sessionId');
         db.createObjectStore('chunks', { keyPath: 'id' }).createIndex('bySession', 'sessionId');
+        db.createObjectStore('photos', { keyPath: 'id' }).createIndex('bySession', 'sessionId');
         db.createObjectStore('settings', { keyPath: 'key' });
       };
       // 旧版を開いたままのタブがあるとアップグレードが進まない。案内するしかない。
@@ -89,14 +103,43 @@ export class Storage {
     return all.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   }
 
-  // 記録開始時と確定時に呼ぶ。無ければ作り、あれば updatedAt だけ進める（ラベル・メモは残す）。
+  // 記録開始時と確定時に呼ぶ。無ければ作り、あれば updatedAt だけ進める。
+  // 調査日はラベル・メモを持たない（日付そのものが識別子で、書くことは地点側にある）。
   async ensureSurvey(surveyId, createdAt = Date.now()) {
     const existing = await this.getSurvey(surveyId);
     const survey = existing
-      ? { ...existing, updatedAt: Date.now() }
-      : { id: surveyId, label: surveyId, memo: '', createdAt, updatedAt: Date.now() };
+      ? { ...existing, updatedAt: nextUpdatedAt(existing) }
+      : { id: surveyId, createdAt, updatedAt: Date.now() };
     await this.putSurvey(survey);
     return survey;
+  }
+
+  // 中身が変わったことを調査日へ伝える（写真の増減など）。
+  // updatedAt が exportedAt を追い越すと「未書き出し」に戻る。
+  async touchSurvey(surveyId) {
+    const survey = await this.getSurvey(surveyId);
+    if (survey) await this.putSurvey({ ...survey, updatedAt: nextUpdatedAt(survey) });
+  }
+
+  // バンドルJSON を書き出した記録を残す。容量警告で「未書き出しぶん」を出すのに使う。
+  async markExported(surveyId) {
+    const survey = await this.getSurvey(surveyId);
+    if (survey) await this.putSurvey({ ...survey, exportedAt: Date.now() });
+  }
+
+  // 端末内に貯まっている量 [バイト]。sessions だけで足りるので全件読んでも軽い。
+  // 実際の IndexedDB 使用量ではなく、書き込むときに数えた概算値の合計。
+  async getStorageUsage() {
+    const sessions = await this.getSessions();
+    const surveys = new Map((await this.getSurveys()).map((s) => [s.id, s]));
+    let total = 0;
+    let unexported = 0;
+    for (const s of sessions) {
+      const bytes = sessionBytes(s);
+      total += bytes;
+      if (!isExported(surveys.get(s.surveyId))) unexported += bytes;
+    }
+    return { total, unexported };
   }
 
   async getSessionsBySurvey(surveyId) {
@@ -150,13 +193,16 @@ export class Storage {
     const session = await this.getSession(id);
     const points = await this.getPointRecords(id);
     const chunks = await this.getChunkKeys(id);
+    const photos = await this.getPhotoKeys(id);
 
-    const tx = this.db.transaction(['sessions', 'points', 'chunks'], 'readwrite');
+    const tx = this.db.transaction(['sessions', 'points', 'chunks', 'photos'], 'readwrite');
     tx.objectStore('sessions').delete(id);
     const ps = tx.objectStore('points');
     for (const p of points) ps.delete(p.id);
     const cs = tx.objectStore('chunks');
     for (const key of chunks) cs.delete(key);
+    const fs = tx.objectStore('photos');
+    for (const key of photos) fs.delete(key);
     await txDone(tx);
 
     if (keepSurvey) return;
@@ -176,8 +222,8 @@ export class Storage {
   async createDraft({ id, startedAt, surveyId }) {
     const existing = await this.getSurvey(surveyId);
     const survey = existing
-      ? { ...existing, updatedAt: Date.now() }
-      : { id: surveyId, label: surveyId, memo: '', createdAt: startedAt, updatedAt: Date.now() };
+      ? { ...existing, updatedAt: nextUpdatedAt(existing) }
+      : { id: surveyId, createdAt: startedAt, updatedAt: Date.now() };
     const session = {
       id,
       type: 'record',
@@ -303,6 +349,63 @@ export class Storage {
     if (hasRaw) point.rawNmea = rawNmea;
     if (deviceSamples.length) point.deviceSamples = deviceSamples;
     return [point, ...points.slice(1)];
+  }
+
+  // ---- photos（地点に付けた写真） ----
+  // 縮小済みの JPEG を Blob のまま入れる（base64 にすると 33% 増えるうえ、
+  // 表示のたびにデコードが要る）。サイズは session.summary.photoBytes にも積み、
+  // 端末内の合計量を sessions だけで数えられるようにする。
+
+  async getPhotoKeys(sessionId) {
+    const idx = this.db.transaction('photos').objectStore('photos').index('bySession');
+    return reqToPromise(idx.getAllKeys(sessionId));
+  }
+
+  async getPhotos(sessionId) {
+    const idx = this.db.transaction('photos').objectStore('photos').index('bySession');
+    const list = await reqToPromise(idx.getAll(sessionId));
+    return list.sort((a, b) => a.addedAt - b.addedAt);
+  }
+
+  // 1枚追加する。seq は既存の最大＋1（削除しても採り直さないので id が衝突しない）。
+  async addPhoto(sessionId, { blob, w, h }) {
+    const session = await this.getSession(sessionId);
+    if (!session) throw new Error('地点が見つかりません');
+    const keys = await this.getPhotoKeys(sessionId);
+    const seq = keys.reduce((max, k) => Math.max(max, +String(k).split('_').pop() || 0), 0) + 1;
+    const photo = { id: `${sessionId}_ph${seq}`, sessionId, seq, blob, bytes: blob.size, w, h, addedAt: Date.now() };
+
+    // 枚数とバイト数は session 側にも持つ。一覧の各行や容量集計で
+    // photos ストアを引き直さずに済ませるため。
+    const tx = this.db.transaction(['photos', 'sessions'], 'readwrite');
+    tx.objectStore('photos').put(photo);
+    const summary = {
+      ...session.summary,
+      photoCount: (session.summary?.photoCount || 0) + 1,
+      photoBytes: (session.summary?.photoBytes || 0) + photo.bytes,
+    };
+    tx.objectStore('sessions').put({ ...session, summary });
+    await txDone(tx);
+    await this.touchSurvey(session.surveyId);
+    return photo;
+  }
+
+  async deletePhoto(sessionId, photoId) {
+    const session = await this.getSession(sessionId);
+    const photos = await this.getPhotos(sessionId);
+    const target = photos.find((p) => p.id === photoId);
+    if (!session || !target) return;
+
+    const tx = this.db.transaction(['photos', 'sessions'], 'readwrite');
+    tx.objectStore('photos').delete(photoId);
+    const summary = {
+      ...session.summary,
+      photoCount: Math.max(0, (session.summary?.photoCount || 0) - 1),
+      photoBytes: Math.max(0, (session.summary?.photoBytes || 0) - target.bytes),
+    };
+    tx.objectStore('sessions').put({ ...session, summary });
+    await txDone(tx);
+    await this.touchSurvey(session.surveyId);
   }
 
   // 取込（JSON）用：実データを 1 チャンクとして入れる。読み出し経路を 1 本にするため。

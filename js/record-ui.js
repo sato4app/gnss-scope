@@ -14,6 +14,10 @@
 // 停止処理が走らないまま落ちた下書きは集計値を持たないので、読込・確定のときに
 // ここで組み立て直す（storage.js を accuracy.js に依存させないため）。
 //
+// 地点には写真を付けられる（現地の様子を残すため）。撮った写真は取り込む時点で
+// 縮小してから保存する（photos.js）。端末内に貯まり続けるので、合計量が増えたら
+// 記録タブの先頭で警告する。止めはしない（現場で測れなくなる方が困る）。
+//
 // 画面に出す情報は重複させない（仕様 7）。同じ値の置き場所は1か所だけ:
 //   点数・DRMS      → 散布図の下の凡例（renderLegend）
 //   経過・収束の状況 → 進捗バー（renderProgress）
@@ -26,11 +30,12 @@ import {
 import { buildWindow, groupBySurvey, nextPointNo, pointLabel, surveyIdOf, surveySummary } from './survey.js';
 import { computeStaticStats, computeDeviceStats } from './accuracy.js';
 import { buildSummary, isInsufficient } from './recorder.js';
-import { isConfirmed } from './storage.js';
+import { isConfirmed, isExported, sessionBytes } from './storage.js';
+import { shrinkImage, formatBytes } from './photos.js';
 import { ScatterPlotView } from './charts.js';
 import { deviceStatusText } from './device-gnss.js';
 import { Beeper, beepFor } from './beep.js';
-import { SERIES } from './constants.js';
+import { SERIES, STORAGE_LIMITS } from './constants.js';
 import {
   exportCSV, exportGPX, exportJSON, exportNMEA,
   exportSurveyCompareCSV, exportSurveyJSON, importSessionFile,
@@ -71,6 +76,137 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     el.textContent = text || '';
   }
 
+  // ---- 端末内のデータ量 ----
+  // 記録は止めない（現場で測れなくなる方が困る）。しきい値を超えたら警告を出し続け、
+  // 「WiFi のある所で書き出して消す」運用を促す。未書き出しぶんを併記するのは、
+  // どれを消してよいかがその場で分かるようにするため。
+  async function refreshStorageWarning() {
+    const el = $('storage-warn');
+    let usage;
+    try {
+      usage = await storage.getStorageUsage();
+    } catch (e) {
+      el.hidden = true;
+      return;
+    }
+    const { warnBytes, maxBytes } = STORAGE_LIMITS;
+    $('storage-status').textContent =
+      `記録データ: 約 ${formatBytes(usage.total)} / 想定上限 ${formatBytes(maxBytes)}` +
+      `（未書き出し 約 ${formatBytes(usage.unexported)}）`;
+    if (usage.total < warnBytes) {
+      el.hidden = true;
+      return;
+    }
+    el.hidden = false;
+    el.textContent =
+      `⚠ 端末内のデータが 約 ${formatBytes(usage.total)}（想定上限 ${formatBytes(maxBytes)}）です。` +
+      `未書き出し 約 ${formatBytes(usage.unexported)}。` +
+      '調査日ごとに「📦 バンドルJSON」で書き出してから、不要な調査日を削除してください。';
+  }
+
+  // ---- 地点の写真 ----
+  // 端末の写真アプリ／カメラを開く。input は1つを使い回すので、選択のたびに
+  // 待っている側を差し替える（キャンセルすると change が来ないため解決しないが、
+  // 次に開いたときに上書きされるだけで害はない）。
+  let photoPickResolve = null;
+  $('file-photo').addEventListener('change', (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = ''; // 同じ写真を続けて選べるようにする
+    photoPickResolve?.(files);
+    photoPickResolve = null;
+  });
+
+  function pickPhotos() {
+    return new Promise((resolve) => {
+      photoPickResolve = resolve;
+      $('file-photo').click();
+    });
+  }
+
+  // 選んだ写真を縮小して地点へ足す。上限を超えるぶんは取り込まない。
+  async function addPhotos(sessionId, files) {
+    const max = settings.photoMaxCount;
+    const room = max - (await storage.getPhotos(sessionId)).length;
+    if (room <= 0) {
+      alert(`写真は1地点あたり ${max} 枚までです。`);
+      return 0;
+    }
+    let added = 0;
+    for (const file of files.slice(0, room)) {
+      try {
+        const { blob, w, h } = await shrinkImage(file, { maxEdge: settings.photoMaxEdge });
+        await storage.addPhoto(sessionId, { blob, w, h });
+        added++;
+      } catch (e) {
+        alert(`写真を取り込めませんでした: ${e.message}`);
+      }
+    }
+    if (files.length > room) alert(`上限 ${max} 枚のため、${files.length - room} 枚は取り込みませんでした。`);
+    return added;
+  }
+
+  // サムネイル列の描画。objectURL は貼り替えのたびに解放する（貯めると端末を圧迫する）。
+  const photoUrls = new Map();
+  async function renderPhotos(stripEl, countEl, sessionId) {
+    for (const url of photoUrls.get(stripEl) || []) URL.revokeObjectURL(url);
+    const photos = await storage.getPhotos(sessionId);
+    const urls = [];
+    stripEl.innerHTML = '';
+    for (const photo of photos) {
+      const url = URL.createObjectURL(photo.blob);
+      urls.push(url);
+      const div = document.createElement('div');
+      div.className = 'photo-thumb';
+      div.innerHTML = `<img src="${url}" alt="${escapeMarkup(`${photo.w}×${photo.h}`)}">` +
+        `<button type="button" data-photo="${escapeMarkup(photo.id)}" title="削除">×</button>`;
+      stripEl.appendChild(div);
+    }
+    photoUrls.set(stripEl, urls);
+    if (countEl) countEl.textContent = `${photos.length} / ${settings.photoMaxCount} 枚`;
+  }
+
+  // 写真パネル（追加ボタン＋サムネイル列）の配線。保存フォームと地点の編集フォームで共用。
+  function wirePhotoPanel({ boxEl, addBtn, stripEl, countEl, getSessionId, onChange }) {
+    // 上限 0 枚なら写真機能そのものを出さない
+    boxEl.hidden = settings.photoMaxCount <= 0;
+    addBtn.addEventListener('click', async () => {
+      const sessionId = getSessionId();
+      if (!sessionId) return;
+      addBtn.disabled = true;
+      try {
+        const files = await pickPhotos();
+        if (files.length && (await addPhotos(sessionId, files))) {
+          await renderPhotos(stripEl, countEl, sessionId);
+          await onChange?.();
+        }
+      } finally {
+        addBtn.disabled = false;
+      }
+    });
+    stripEl.addEventListener('click', async (ev) => {
+      const photoId = ev.target.dataset?.photo;
+      const sessionId = getSessionId();
+      if (!photoId || !sessionId) return;
+      if (!confirm('この写真を削除しますか？')) return;
+      await storage.deletePhoto(sessionId, photoId);
+      await renderPhotos(stripEl, countEl, sessionId);
+      await onChange?.();
+    });
+  }
+
+  // 停止直後の保存フォームの写真パネル
+  wirePhotoPanel({
+    boxEl: $('photo-box-save'),
+    addBtn: $('btn-photo-add'),
+    stripEl: $('photo-strip'),
+    countEl: $('photo-count'),
+    getSessionId: () => pending?.sessionId ?? null,
+    onChange: async () => {
+      await refreshList();
+      await refreshStorageWarning();
+    },
+  });
+
   // ---- record ----
   $('btn-record').addEventListener('click', async () => {
     if (recorder.isRecording) return;
@@ -83,6 +219,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     pending = null;
     setPendingUi(false);
     showWriteError('');
+    $('photo-strip').innerHTML = '';
     $('rec-result-box').hidden = true;
     $('rec-scatter-box').hidden = false; // ここから散布図を出す（記録前は出さない。仕様 6）
     prevStableSec = 0;
@@ -287,6 +424,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       // 0点の記録は recorder 側が下書きごと片付ける
       pending = null;
       setPendingUi(false);
+      $('photo-strip').innerHTML = '';
       await recorder.settled();
       await refreshList();
       return;
@@ -307,8 +445,11 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     $('rec-label').value = await defaultLabel(pending.surveyId);
     $('rec-memo').value = '';
     setPendingUi(true);
+    // 現地にいるうちに写真を付けられるようにする（下書きに紐づくので確定前でもよい）
+    await renderPhotos($('photo-strip'), $('photo-count'), pending.sessionId);
     await recorder.settled(); // 一覧に完全な集計値を出すため、書き込みの完了を待つ
     await refreshList();
+    await refreshStorageWarning();
   }
 
   // その調査日の次の地点名（確定済みのみを見て採番する。下書きは番号を消費しない）
@@ -351,6 +492,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       if (!entry) return;
       pending = null;
       setPendingUi(false);
+      $('photo-strip').innerHTML = '';
       const meta = sessionMeta(entry.session);
       showResult(stopSummaryText(meta), savedText(entry.session, entry.point), meta.stopReason);
       await load(entry); // 確定した記録をそのまま解析・地図の対象にする
@@ -370,11 +512,13 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     const id = pending?.sessionId;
     pending = null;
     setPendingUi(false);
+    $('photo-strip').innerHTML = '';
     if (!id) return;
     await recorder.settled();
     await storage.deleteSession(id);
     if (id === getLoadedId()) await load(null);
     else await refreshList();
+    await refreshStorageWarning();
   }
 
   // ---- 下書きの確定 ----
@@ -454,6 +598,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       // 単体・バンドル（調査日まるごと）どちらの JSON も同じ入口で受ける
       const entries = await importSessionFile(file, storage);
       await load(entries[entries.length - 1]);
+      await refreshStorageWarning();
       const epochs = entries.reduce((n, e) => n + e.point.samples.length, 0);
       alert(`取り込みました: ${entries.length} 地点 / 合計 ${epochs} エポック`);
     } catch (err) {
@@ -480,6 +625,32 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       await storage.deleteSession(session.id);
       if (session.id === getLoadedId()) await load(null);
       else await refreshList();
+      await refreshStorageWarning();
+      return;
+    }
+    // 確定済み地点の編集：地点名・メモ・写真をその行で直せるようにする
+    if (act === 'edit') {
+      const form = li.querySelector('.edit-form');
+      form.hidden = !form.hidden;
+      if (form.hidden) return;
+      form.querySelector('.edit-label').value = session.label || '';
+      form.querySelector('.edit-memo').value = session.memo || '';
+      const strip = li.querySelector('.edit-photo-strip');
+      if (strip) await renderPhotos(strip, li.querySelector('.edit-photo-count'), session.id);
+      return;
+    }
+    if (act === 'save-edit') {
+      const form = li.querySelector('.edit-form');
+      const label = form.querySelector('.edit-label').value.trim();
+      await storage.putSession({ ...session, label: label || session.label, memo: form.querySelector('.edit-memo').value.trim() });
+      await refreshList();
+      return;
+    }
+    if (act === 'edit-photo') {
+      const files = await pickPhotos();
+      if (!files.length || !(await addPhotos(session.id, files))) return;
+      await renderPhotos(li.querySelector('.edit-photo-strip'), li.querySelector('.edit-photo-count'), session.id);
+      await refreshStorageWarning();
       return;
     }
     // 下書きの確定：その行に地点名・メモの入力欄を開く（再起動後の回収経路）
@@ -519,7 +690,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       const sessions = await storage.getSessionsBySurvey(survey.id);
       const drafts = sessions.filter((s) => !isConfirmed(s)).length;
       const what = `${sessions.length - drafts} 地点` + (drafts ? `と下書き ${drafts} 件` : '');
-      if (!confirm(`「${survey.label || survey.id}」の ${what} をまとめて削除しますか？`)) return;
+      if (!confirm(`「${survey.id}」の ${what} をまとめて削除しますか？`)) return;
       if (sessions.some((s) => s.id === pending?.sessionId)) {
         pending = null;
         setPendingUi(false);
@@ -528,6 +699,7 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       await storage.deleteSurvey(survey.id);
       if (loadedGone) await load(null);
       else await refreshList();
+      await refreshStorageWarning();
       return;
     }
     const entries = await storage.getSurveyEntries(survey.id);
@@ -535,8 +707,17 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       alert('この調査日には地点がありません');
       return;
     }
-    if (act === 'compare') exportSurveyCompareCSV(survey, entries);
-    else if (act === 'bundle') exportSurveyJSON(survey, entries);
+    if (act === 'compare') {
+      exportSurveyCompareCSV(survey, entries);
+      return;
+    }
+    if (act === 'bundle') {
+      exportSurveyJSON(survey, entries);
+      // 書き出した記録を残す。容量警告の「未書き出しぶん」と一覧の表示に使う
+      await storage.markExported(survey.id);
+      await refreshList();
+      await refreshStorageWarning();
+    }
   }
 
   // 記録一覧：調査日 → 地点 のツリー。地点の対応（NMEA / Android が揃っているか）も各行に出す。
@@ -559,17 +740,20 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
       const confirmed = group.sessions.filter(isConfirmed);
       const draftCount = group.sessions.length - confirmed.length;
       const sum = surveySummary(confirmed);
+      const bytes = group.sessions.reduce((n, x) => n + sessionBytes(x), 0);
+      const exported = isExported(survey);
       const li = document.createElement('li');
       li.className = 'survey';
       li.innerHTML = `
         <details open>
           <summary>
-            <span class="sv-date">${escapeMarkup(survey.label || survey.id)}</span>
+            <span class="sv-date">${escapeMarkup(survey.id)}</span>
             <span class="sv-count">${sum.points} 地点</span>
             ${draftCount ? `<span class="sv-draft">下書き ${draftCount}件</span>` : ''}
+            ${exported ? '<span class="sv-exported">書出済</span>' : ''}
             <span class="sv-pair">両系統 ${sum.both}${sum.gnssOnly ? ` / ${SERIES.gnss.label}のみ ${sum.gnssOnly}` : ''}${sum.deviceOnly ? ` / ${SERIES.device.label}のみ ${sum.deviceOnly}` : ''}</span>
           </summary>
-          <div class="sv-sub">平均DRMS: ${SERIES.gnss.label} ${fmt(sum.avgDrms, 2, ' m')} / ${SERIES.device.label} ${fmt(sum.avgDeviceDrms, 2, ' m')}</div>
+          <div class="sv-sub">平均DRMS: ${SERIES.gnss.label} ${fmt(sum.avgDrms, 2, ' m')} / ${SERIES.device.label} ${fmt(sum.avgDeviceDrms, 2, ' m')}　データ量 約 ${formatBytes(bytes)}</div>
           <div class="s-actions sv-actions">
             <button class="btn" data-sact="compare">📊 対応表CSV</button>
             <button class="btn" data-sact="bundle">📦 バンドルJSON</button>
@@ -605,26 +789,59 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     li.addEventListener('click', (ev) => {
       const act = ev.target.dataset?.act;
       if (act) runAction(act, session, li);
+      else if (ev.target.dataset?.photo) removeRowPhoto(session, li, ev.target.dataset.photo);
     });
     return li;
+  }
+
+  // 一覧の行から写真を1枚消す
+  async function removeRowPhoto(session, li, photoId) {
+    if (!confirm('この写真を削除しますか？')) return;
+    await storage.deletePhoto(session.id, photoId);
+    await renderPhotos(li.querySelector('.edit-photo-strip'), li.querySelector('.edit-photo-count'), session.id);
+    await refreshStorageWarning();
   }
 
   // 1地点ぶんの行（確定済み）
   function pointRow(session, loadedId) {
     const imported = !!session.importedAt;
     const hasRaw = (session.summary?.rawLines ?? 0) > 0;
+    const photos = session.summary?.photoCount || 0;
     const head =
       `<span class="s-no">No.${session.pointNo ?? '—'}</span>` +
       `<span class="s-type ${imported ? 'imported' : ''}">${imported ? '取込' : '記録'}</span>` +
-      `<span class="s-label">${escapeMarkup(session.label)}</span>`;
+      `<span class="s-label">${escapeMarkup(session.label)}</span>` +
+      (photos ? `<span class="s-photos">📷${photos}</span>` : '');
     const actions = `
       <button class="btn" data-act="load">読込</button>
+      <button class="btn" data-act="edit">編集</button>
       <button class="btn" data-act="csv">CSV</button>
       <button class="btn" data-act="gpx">GPX</button>
       <button class="btn" data-act="nmea"${hasRaw ? '' : ' disabled'}>NMEA</button>
       <button class="btn" data-act="json">JSON</button>
       <button class="btn danger" data-act="del">削除</button>`;
-    return buildRow(session, loadedId, head, actions);
+    return buildRow(session, loadedId, head, actions, editForm());
+  }
+
+  // 確定済み地点の編集フォーム（地点名・メモ・写真）。
+  // 現地で撮り忘れた写真を後から足せるようにするのが主目的。
+  function editForm() {
+    const photoUi = settings.photoMaxCount > 0
+      ? `<div class="photo-box">
+          <button class="btn" data-act="edit-photo">📷 写真を追加</button>
+          <span class="note-inline edit-photo-count"></span>
+        </div>
+        <div class="photo-strip edit-photo-strip"></div>`
+      : '';
+    return `
+      <div class="edit-form" hidden>
+        <div class="rec-form">
+          <input type="text" class="edit-label" placeholder="地点名">
+          <input type="text" class="edit-memo" placeholder="メモ（任意）">
+        </div>
+        ${photoUi}
+        <div class="s-actions"><button class="btn primary" data-act="save-edit">変更を保存</button></div>
+      </div>`;
   }
 
   // 下書きの行。エクスポートは出さない（確定してから持ち出す）。
@@ -662,8 +879,25 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
   setRecordingUi(false);
   setPendingUi(false);
   refreshList();
+  refreshStorageWarning();
 
-  return { update, onRecordUpdate, onRecordStop, onDeviceStatus, onWriteError, onShow: () => scatterView.redraw() };
+  // 写真の上限枚数を 0 にすると写真UIごと消える。設定タブから変えられるので、
+  // 保存フォームと一覧の編集フォーム（refreshList で作り直す）に反映し直す。
+  async function refreshPhotoUi() {
+    $('photo-box-save').hidden = settings.photoMaxCount <= 0;
+    await refreshList();
+  }
+
+  return {
+    update,
+    onRecordUpdate,
+    onRecordStop,
+    onDeviceStatus,
+    onWriteError,
+    refreshStorageWarning,
+    refreshPhotoUi,
+    onShow: () => scatterView.redraw(),
+  };
 }
 
 // ---- Wake Lock（記録中の画面維持） ----

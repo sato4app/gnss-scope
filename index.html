@@ -64,6 +64,7 @@
         <button id="btn-discard" class="btn danger" disabled>🗑 破棄</button>
       </div>
       <div id="rec-write-error" class="note-error" hidden></div>
+      <div id="storage-warn" class="note-warn" hidden></div>
 
       <!-- 収束の進捗（記録中のみ）。主バー=経過/上限、副バー=収束判定の2フェーズ -->
       <div id="rec-progress" class="rec-progress" hidden>
@@ -119,10 +120,18 @@
         <div id="rec-result" class="result-box"></div>
       </details>
 
-      <div id="save-form" class="rec-form" hidden>
-        <input id="rec-label" type="text" placeholder="地点名">
-        <input id="rec-memo" type="text" placeholder="メモ（任意）">
+      <div id="save-form" class="save-form" hidden>
+        <div class="rec-form">
+          <input id="rec-label" type="text" placeholder="地点名">
+          <input id="rec-memo" type="text" placeholder="メモ（任意）">
+        </div>
+        <div id="photo-box-save" class="photo-box">
+          <button id="btn-photo-add" class="btn">📷 写真を追加</button>
+          <span id="photo-count" class="note-inline">0 / 5 枚</span>
+        </div>
+        <div id="photo-strip" class="photo-strip"></div>
       </div>
+      <input id="file-photo" type="file" accept="image/*" capture="environment" multiple hidden>
 
       <div class="sub-head">記録一覧（調査日 → 地点）</div>
       <div class="conn-bar">
@@ -227,6 +236,23 @@
       <label class="set-row">記録 収集エポック数（0=無制限）
         <input id="set-maxepochs" type="number" min="0" step="10">
       </label>
+
+      <div class="sub-head">地点の写真</div>
+      <label class="set-row">1地点あたりの上限枚数（0=写真を使わない）
+        <input id="set-photomax" type="number" min="0" max="20" step="1">
+      </label>
+      <div class="set-row">縮小後の長辺 [px]
+        <span class="radio-group">
+          <label><input type="radio" name="photoedge" value="1280">1280</label>
+          <label><input type="radio" name="photoedge" value="640">640</label>
+          <label><input type="radio" name="photoedge" value="320">320</label>
+        </span>
+      </div>
+      <div class="note-dim">撮った写真は取り込むときに縮小して保存します。1枚あたりの目安は 1280px で 200KB、640px で 60KB、320px で 20KB 程度です（被写体によって変わります）。端末内に貯まり続けるため、大きくすると容量警告が早く出ます。</div>
+
+      <div class="sub-head">端末内のデータ量</div>
+      <div id="storage-status" class="tile-status">—</div>
+      <div class="note-dim">記録データと写真の概算です（地図タイルは含みません）。50MB を超えると記録タブに警告が出ます。WiFi のある場所で調査日ごとに「📦 バンドルJSON」を書き出し、不要になった調査日を削除してください。</div>
 
       <div class="sub-head">地図</div>
       <div class="set-row">地図種別

@@ -177,6 +177,51 @@ body {
   margin-top: 8px;
 }
 .note-error[hidden] { display: none; }
+/* 端末内のデータ量が増えたときの注意（記録は止めないので警告のみ） */
+.note-warn {
+  background: #2b2410;
+  border: 1px solid #5c4d1d;
+  color: #f0d27a;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.note-warn[hidden] { display: none; }
+
+/* 地点の写真（保存フォーム・一覧の編集フォームで共用） */
+.save-form[hidden] { display: none; }
+.photo-box { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.photo-box[hidden] { display: none; }
+.photo-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.photo-strip:empty { display: none; }
+.photo-thumb {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-thumb button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.session-list .edit-form { margin-top: 8px; }
+.session-list .edit-form .rec-form { margin-top: 0; }
+
 
 .result-box {
   font-size: 12px;
@@ -320,6 +365,14 @@ body {
 .session-list .s-type.recording { background: var(--bad); color: #fff; }
 .session-list .draft-form { margin-top: 8px; }
 .session-list .draft-form .btn { flex: 0 0 auto; }
+.session-list .s-photos { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+.session-list .sv-exported {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--good);
+  color: #06281a;
+}
 .session-list .sv-draft {
   font-size: 11px;
   padding: 1px 8px;

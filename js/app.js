@@ -21,7 +21,16 @@ import { DEFAULT_SETTINGS } from './constants.js';
 
 async function main() {
   const storage = new Storage();
+  // 旧版を開いたままのタブがあると DB のアップグレードが進まない。案内するしかない
+  storage.onBlocked = () => {
+    document.body.innerHTML =
+      '<p style="padding:24px;line-height:1.8">他のタブでこのアプリが開いています。' +
+      'すべて閉じてから再読込してください。</p>';
+  };
   await storage.init();
+  // 記録開始で下書きを作る以上、最初の追記より前に落ちれば空の下書きが残る。
+  // 復元できるデータが 1 件も無いものだけを片付ける（中身のある下書きは消さない）。
+  await storage.cleanupEmptyDrafts().catch(() => {});
 
   // 設定値は永続化しない。起動のたびに js/constants.js の既定値から始め、
   // 設定タブでの変更はこの起動中だけ有効になる。
@@ -56,6 +65,7 @@ async function main() {
       recordUI.onRecordStop(pending);
       analysisUI.setLiveStats(pending.stats, pending.deviceStats || null);
     },
+    onFlushError: (failures) => recordUI.onWriteError(failures),
   });
 
   // 読込データ（load したセッション）を解析タブ・地図タブへ配る
@@ -146,28 +156,12 @@ async function main() {
     },
   });
 
-  // 画面 OFF / 他アプリへの切替 → 猶予を過ぎたら記録を中断して停止する（仕様 3-7）。
-  // 画面が消えると BLE が切れてデータが届かなくなるため、そのまま続けると
-  // 穴の空いた区間が1地点として残る。復帰後は続きではなく別の地点として測り直す。
-  // 猶予を置くのは、地図アプリを一瞬見る・写真を撮るといった短い離脱で
-  // 記録が毎回やり直しになるのを避けるため（document.hidden は画面OFF以外でも立つ）。
-  const HIDDEN_GRACE_MS = 5000;
-  let hiddenTimer = null;
+  // 記録の打ち切りは「画面が隠れたか」ではなく「エポックが来ているか」で判定する
+  // （recorder.js の途絶タイマー）。画面 OFF・BLE 切断・受信機の電池切れ・fix 喪失を
+  // 一様に拾えるうえ、停止判定が addEpoch の中にしか無いことによる「記録が凍る」も防げる。
+  // ここに残るのは、非表示中にサイズが確定しない地図の描き直しだけ。
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (recorder.isRecording && hiddenTimer == null) {
-        hiddenTimer = setTimeout(() => {
-          hiddenTimer = null;
-          if (recorder.isRecording) recorder.stop('interrupted');
-        }, HIDDEN_GRACE_MS);
-      }
-      return;
-    }
-    if (hiddenTimer != null) {
-      clearTimeout(hiddenTimer); // 猶予内に戻ってきたので記録を続ける
-      hiddenTimer = null;
-    }
-    if (tabUI.current === 'map') mapView.invalidateSize();
+    if (!document.hidden && tabUI.current === 'map') mapView.invalidateSize();
   });
 
   if ('serviceWorker' in navigator) {
@@ -177,4 +171,14 @@ async function main() {
   }
 }
 
-main();
+// 起動できなかったこと自体を隠さない（DB を開けない・アップグレードできない等）。
+// onBlocked で案内を出している場合は、そちらの文面を上書きしない。
+main().catch((e) => {
+  console.error('起動に失敗しました:', e);
+  if (typeof document === 'undefined' || document.getElementById('boot-error')) return;
+  const p = document.createElement('p');
+  p.id = 'boot-error';
+  p.style.cssText = 'padding:24px;line-height:1.8;color:#ff5d5d';
+  p.textContent = `起動に失敗しました: ${e.message}`;
+  document.body.prepend(p);
+});

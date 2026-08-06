@@ -46,10 +46,11 @@ const { formatStats, formatCompare, formatWindow, bearingText } = await import(
 );
 const {
   surveyIdOf, pointLabel, nextPointNo, timeWindow, windowOverlap, clockOffsetMs,
-  groupBySurvey, surveySummary, pairingOf, assignSurveyKeys, countInWindow,
+  groupBySurvey, surveySummary, pairingOf, countInWindow,
 } = await import(pathToFileURL(resolve(jsDir, 'survey.js')).href);
 const { compareRow, COMPARE_HEADER, importSessionFile } = await import(pathToFileURL(resolve(jsDir, 'file-io.js')).href);
-const { Recorder } = await import(pathToFileURL(resolve(jsDir, 'recorder.js')).href);
+const { Recorder, buildSummary, isInsufficient } = await import(pathToFileURL(resolve(jsDir, 'recorder.js')).href);
+const { isConfirmed } = await import(pathToFileURL(resolve(jsDir, 'storage.js')).href);
 const { EpochAssembler } = await import(pathToFileURL(resolve(jsDir, 'epoch.js')).href);
 const { StreamStats, diffRxStats } = await import(pathToFileURL(resolve(jsDir, 'stream-stats.js')).href);
 // 系統名は js/constants.js が唯一の出所。表示文言のテストもそこを参照する
@@ -301,16 +302,6 @@ assert(Math.abs(svSum.avgDrms - 2) < 1e-9, '調査日集計: 平均DRMS');
 assert(pairingOf({ count: 0, deviceCount: 3 }) === 'deviceOnly', '対応状況: Androidのみ');
 assert(pairingOf({ count: 5, deviceCount: 3 }) === 'both', '対応状況: 両系統あり');
 
-// v1 → v2 移行：既存の記録にも調査日と地点番号を振る
-const legacyKeys = assignSurveyKeys([
-  { id: 'x', createdAt: new Date(2026, 6, 8, 10, 0).getTime() },
-  { id: 'y', createdAt: new Date(2026, 6, 8, 9, 0).getTime() },
-  { id: 'z', createdAt: new Date(2026, 6, 9, 9, 0).getTime() },
-]);
-const keyOf = (id) => legacyKeys.find((k) => k.id === id);
-assert(keyOf('y').pointNo === 1 && keyOf('x').pointNo === 2, '移行: 同日は createdAt 昇順で1から採番');
-assert(keyOf('z').surveyId === '2026-07-09' && keyOf('z').pointNo === 1, '移行: 日が変われば1に戻る');
-
 // 測定区間の表示テキスト
 const winText = formatWindow(
   { startedAt: 0, endedAt: 60000, durationSec: 60, gnss: { startedAt: 0, endedAt: 60000, durationSec: 60, count: 60 }, device: { startedAt: 10000, endedAt: 60000, durationSec: 50, count: 20 }, overlap: { overlapSec: 50, coverGnss: 0.83, coverDevice: 1 }, clockOffsetMs: 300 },
@@ -344,20 +335,114 @@ assert(
 );
 
 // ---- 記録フロー（record → stop → save） ----
-// 保存先の擬似ストア（storage.js と同じ呼び出し面を持たせる）
+// 保存先の擬似ストア（storage.js と同じ呼び出し面・同じ結合規則を持たせる）。
+// failAppend を立てると追記が失敗する（記録中の書き込み失敗の挙動を確かめるため）。
 function makeFakeStorage() {
-  const db = { surveys: new Map(), sessions: new Map(), points: new Map() };
-  return {
+  const db = { surveys: new Map(), sessions: new Map(), points: new Map(), chunks: new Map() };
+  const bySession = (map, sid) => [...map.values()].filter((v) => v.sessionId === sid);
+  const store = {
     db,
-    putSession: async (s) => (db.sessions.set(s.id, s), s),
-    putPoint: async (p) => (db.points.set(p.id, p), p),
-    getSessionsBySurvey: async (id) => [...db.sessions.values()].filter((s) => s.surveyId === id),
+    failAppend: false,
     ensureSurvey: async (id, createdAt) => {
       const cur = db.surveys.get(id) || { id, label: id, memo: '', createdAt };
       db.surveys.set(id, { ...cur, updatedAt: Date.now() });
       return db.surveys.get(id);
     },
+    getSession: async (id) => db.sessions.get(id) || null,
+    getSessionsBySurvey: async (id) => [...db.sessions.values()].filter((s) => s.surveyId === id),
+    getPointRecords: async (sid) => bySession(db.points, sid),
+    getChunkKeys: async (sid) => bySession(db.chunks, sid).map((c) => c.id),
+    getSurvey: async (id) => db.surveys.get(id) || null,
+    createDraft: async ({ id, startedAt, surveyId }) => {
+      await store.ensureSurvey(surveyId, startedAt);
+      const session = {
+        id, type: 'record', status: 'draft', surveyId, pointNo: null,
+        label: '', memo: '', createdAt: startedAt, summary: { count: 0, rawLines: null },
+      };
+      const point = { id: `${id}_p`, sessionId: id, surveyId, pointNo: null, kind: 'record' };
+      db.sessions.set(id, session);
+      db.points.set(point.id, point);
+      return { session, point };
+    },
+    appendChunk: async (sessionId, seq, data, progress) => {
+      if (store.failAppend) throw new Error('quota');
+      db.chunks.set(`${sessionId}_${seq}`, { id: `${sessionId}_${seq}`, sessionId, seq, ...data });
+      const s = db.sessions.get(sessionId);
+      if (s) db.sessions.set(sessionId, { ...s, ...progress, summary: { ...s.summary, ...progress.summary } });
+    },
+    finishDraft: async (sessionId, { stats, deviceStats, summary, window, endedAt }) => {
+      const s = db.sessions.get(sessionId);
+      if (!s) return null;
+      const next = { ...s, endedAt, window, summary };
+      db.sessions.set(sessionId, next);
+      for (const p of bySession(db.points, sessionId)) {
+        db.points.set(p.id, { ...p, stats, ...(deviceStats ? { deviceStats } : {}) });
+      }
+      return next;
+    },
+    confirmDraft: async (sessionId, { stats, deviceStats, ...patch }) => {
+      const s = db.sessions.get(sessionId);
+      const next = { ...s, ...patch, status: 'confirmed', confirmedAt: Date.now() };
+      db.sessions.set(sessionId, next);
+      for (const p of bySession(db.points, sessionId)) {
+        db.points.set(p.id, {
+          ...p, pointNo: next.pointNo, ...(stats ? { stats } : {}), ...(deviceStats ? { deviceStats } : {}),
+        });
+      }
+      await store.ensureSurvey(next.surveyId, next.createdAt);
+      return next;
+    },
+    deleteSession: async (id) => {
+      db.sessions.delete(id);
+      for (const p of bySession(db.points, id)) db.points.delete(p.id);
+      for (const c of bySession(db.chunks, id)) db.chunks.delete(c.id);
+    },
+    // チャンクを seq 順に結合して従来と同じ形の point を返す（storage.js と同じ規則）
+    getPointsBySession: async (sid) => {
+      const points = bySession(db.points, sid);
+      if (!points.length) return [];
+      const chunks = bySession(db.chunks, sid).sort((a, b) => a.seq - b.seq);
+      const samples = [];
+      const rawNmea = [];
+      const deviceSamples = [];
+      let hasRaw = false;
+      for (const c of chunks) {
+        if (c.samples) samples.push(...c.samples);
+        if (c.deviceSamples) deviceSamples.push(...c.deviceSamples);
+        if (c.rawNmea) {
+          hasRaw = true;
+          rawNmea.push(...c.rawNmea);
+        }
+      }
+      const point = { ...points[0], samples };
+      if (hasRaw) point.rawNmea = rawNmea;
+      if (deviceSamples.length) point.deviceSamples = deviceSamples;
+      return [point, ...points.slice(1)];
+    },
+    putImported: async (session, point, data) => {
+      db.sessions.set(session.id, session);
+      db.points.set(point.id, point);
+      db.chunks.set(`${session.id}_0`, { id: `${session.id}_0`, sessionId: session.id, seq: 0, ...data });
+    },
   };
+  return store;
+}
+
+// 記録の id は `rec_<開始ms>`。テストは連続で走るので、記録の合間に時計を進めておく
+// （実機では下書きの作成に IndexedDB のトランザクションが挟まるため 1ms 未満にはならない）。
+const tick = () => new Promise((r) => setTimeout(r, 2));
+
+// 下書きを確定する（record-ui.js の confirmDraft と同じ手順。確定済みだけを見て採番する）
+async function confirmDraft(store, sessionId, label = '', memo = '') {
+  const session = await store.getSession(sessionId);
+  const siblings = (await store.getSessionsBySurvey(session.surveyId)).filter(isConfirmed);
+  const pointNo = nextPointNo(siblings, session.surveyId);
+  const next = await store.confirmDraft(sessionId, {
+    pointNo,
+    label: label || pointLabel(session.surveyId, pointNo),
+    memo,
+  });
+  return { session: next, point: (await store.getPointsBySession(sessionId))[0] };
 }
 
 const mkEpoch = (i, base = 34.8536) => ({
@@ -378,49 +463,117 @@ const mkEpoch = (i, base = 34.8536) => ({
 
 const fakeStorage = makeFakeStorage();
 const rec = new Recorder(fakeStorage);
-rec.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 }); // 上限なし = 手動停止のみ
+await rec.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 }); // 上限なし = 手動停止のみ
+const draftId = rec.currentId;
+assert(fakeStorage.db.sessions.get(draftId)?.status === 'draft', '記録: 開始時に下書きを作る');
+assert(fakeStorage.db.sessions.get(draftId).pointNo === null, '記録: 下書きは地点番号を採らない');
+assert(fakeStorage.db.surveys.size === 1, '記録: 開始時に調査日（ツリーの根）を用意する');
+
 rec.addRawLine(ggaLine);
 rec.addRawLine(cs('GNRMC,010000.00,A,3451.2200,N,13528.3225,E,0.0,0.0,080726,,,A'));
 for (let i = 0; i < 10; i++) rec.addEpoch(mkEpoch(i));
+await Promise.resolve(); // 追記は await しないで走らせるので、擬似ストアの解決を待つ
+assert(fakeStorage.db.chunks.size === 2, '記録: 5エポックごとにチャンクを追記する');
+assert(fakeStorage.db.sessions.get(draftId).summary.count === 10, '記録: 追記のたびに進捗（点数）を下書きへ残す');
+
 const pending = rec.stop('manual');
 assert(pending.stats.count === 10 && pending.stopReason === 'manual', '記録: stop で集計する');
-assert(fakeStorage.db.sessions.size === 0, '記録: stop 時点では保存しない（save まで未保存）');
-assert(pending.samples[0].satellites.length === 1, '記録: サンプルに衛星リストを残す（後からSkyPlot/SNR再現用）');
-assert(pending.samples[0].recvAt != null, '記録: サンプルに端末時計(recvAt)も残す（2系統の突合用）');
-assert(pending.rawNmea.length === 2, '記録: 生NMEA行をそのまま蓄積する');
+await rec.settled();
+const stopped = await fakeStorage.getSession(draftId);
+assert(stopped.status === 'draft', '記録: 停止しても下書きのまま（保存で確定する）');
+assert(stopped.summary.count === 10 && stopped.summary.drms >= 0, '記録: 停止時に summary へ集計値を書く');
+
+const draftPoint = (await fakeStorage.getPointsBySession(draftId))[0];
+assert(draftPoint.samples.length === 10, '記録: チャンクを結合すると全エポックが揃う');
+assert(draftPoint.samples[0].satellites.length === 1, '記録: サンプルに衛星リストを残す（後からSkyPlot/SNR再現用）');
+assert(draftPoint.samples[0].recvAt != null, '記録: サンプルに端末時計(recvAt)も残す（2系統の突合用）');
+assert(draftPoint.rawNmea.length === 2, '記録: 生NMEA行をそのまま蓄積する');
 assert(pending.window.gnss.count === 10 && pending.window.device === null, '記録: NMEA側の測定区間を残す');
 assert(pending.window.gnssUtc.startedAt === Date.UTC(2026, 6, 8, 1, 0, 0), '記録: GPS時刻での区間も残す');
 
-const entry = await rec.save(pending, { label: 'テスト地点', memo: 'メモ' });
-assert(fakeStorage.db.sessions.size === 1 && entry.session.type === 'record', '記録: save で sessions へ保存');
-assert(entry.point.kind === 'record' && entry.point.samples.length === 10, '記録: save で生エポックを保存');
-assert(entry.session.summary.count === 10 && entry.session.summary.drms >= 0, '記録: summary に集計値を残す');
-assert(entry.session.label === 'テスト地点' && entry.session.memo === 'メモ', '記録: 地点名・メモは save 時に付与');
+const entry = await confirmDraft(fakeStorage, draftId, 'テスト地点', 'メモ');
+assert(entry.session.status === 'confirmed' && entry.session.type === 'record', '記録: 保存で確定済みになる');
+assert(entry.point.kind === 'record' && entry.point.samples.length === 10, '記録: 確定後も実データはチャンクから読める');
+assert(entry.session.label === 'テスト地点' && entry.session.memo === 'メモ', '記録: 地点名・メモは確定時に付与');
 assert(
   entry.session.surveyId === surveyIdOf(pending.startedAt) && entry.session.pointNo === 1,
-  '記録: save で調査日と地点番号を採番する'
+  '記録: 確定で地点番号を採番する'
 );
 assert(entry.point.surveyId === entry.session.surveyId && entry.point.pointNo === 1, '記録: 葉（point）にも地点番号を複写する');
-assert(fakeStorage.db.surveys.has(entry.session.surveyId), '記録: 調査日（ツリーの根）を用意する');
-assert(entry.point.rawNmea.length === 2 && entry.session.summary.rawLines === 2, '記録: 生NMEAを point に保存し件数を summary に残す');
+assert(entry.session.summary.rawLines === 2, '記録: 生NMEAの件数を summary に残す');
 
 // 同じ調査日に続けて記録すると地点番号が増える（1日に何十地点もまわる運用）
 const rec1b = new Recorder(fakeStorage);
-rec1b.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+await tick();
+await rec1b.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+const draft1b = rec1b.currentId;
 rec1b.addEpoch(mkEpoch(0, 34.86));
-const entry1b = await rec1b.save(rec1b.stop('manual'), {});
+rec1b.stop('manual');
+await rec1b.settled();
+const entry1b = await confirmDraft(fakeStorage, draft1b);
 assert(entry1b.session.pointNo === 2, '記録: 同じ調査日の次の記録は地点 No.2');
 assert(entry1b.session.label === pointLabel(entry1b.session.surveyId, 2), '記録: 既定の地点名は調査日＋連番');
 
+// 下書きは地点番号を消費しない（測り直しても番号が飛ばない）
+const recDraft = new Recorder(fakeStorage);
+await tick();
+await recDraft.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+const abandoned = recDraft.currentId;
+recDraft.addEpoch(mkEpoch(0, 34.88));
+recDraft.stop('manual');
+await recDraft.settled();
+const siblingsWithDraft = await fakeStorage.getSessionsBySurvey(surveyIdOf(Date.now()));
+assert(
+  nextPointNo(siblingsWithDraft.filter(isConfirmed), surveyIdOf(Date.now())) === 3,
+  '記録: 下書きは地点番号を消費しない'
+);
+await fakeStorage.deleteSession(abandoned);
+assert(fakeStorage.db.chunks.size > 0, '記録: 他の地点のチャンクは残る');
+assert(
+  [...fakeStorage.db.chunks.values()].every((c) => c.sessionId !== abandoned),
+  '記録: 下書きを削除するとチャンクも消える'
+);
+
+// 有効エポック 0 点の記録は下書きごと片付ける（復元しても使えないため）
+const recEmpty = new Recorder(fakeStorage);
+await tick();
+await recEmpty.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+const emptyId = recEmpty.currentId;
+recEmpty.addRawLine(ggaLine);
+const pendingEmpty = recEmpty.stop('stalled');
+assert(pendingEmpty.stats === null, '記録: 0点の停止は集計値を持たない');
+await recEmpty.settled();
+assert(!fakeStorage.db.sessions.has(emptyId), '記録: 0点の記録は下書きごと削除する');
+
 // 生NMEA保存 OFF のときは行を集めず、point にキーも作らない
 const rec1c = new Recorder(fakeStorage);
-rec1c.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0, saveRaw: false });
+await tick();
+await rec1c.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0, saveRaw: false });
+const draft1c = rec1c.currentId;
 rec1c.addRawLine(ggaLine);
 rec1c.addEpoch(mkEpoch(0, 34.87));
 const pending1c = rec1c.stop('manual');
-assert(pending1c.rawNmea === null, '記録: 生NMEA保存 OFF なら行を集めない');
-const entry1c = await rec1c.save(pending1c, {});
-assert(!('rawNmea' in entry1c.point) && entry1c.session.summary.rawLines === null, '記録: OFF の記録に rawNmea キーを作らない');
+assert(pending1c.summary.rawLines === null, '記録: 生NMEA保存 OFF なら行を集めない');
+await rec1c.settled();
+const point1c = (await fakeStorage.getPointsBySession(draft1c))[0];
+assert(!('rawNmea' in point1c), '記録: OFF の記録に rawNmea キーを作らない');
+
+// 追記が失敗しても収集済みを捨てず、続けて失敗したら打ち切る
+const failStore = makeFakeStorage();
+const recFail = new Recorder(failStore);
+await recFail.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+failStore.failAppend = true;
+for (let i = 0; i < 15; i++) recFail.addEpoch(mkEpoch(i, 34.9));
+await new Promise((r) => setTimeout(r, 0));
+assert(failStore.db.chunks.size === 0, '記録: 追記に失敗したらチャンクは残らない');
+assert(!recFail.isRecording, '記録: 追記が連続 3 回失敗したら打ち切る');
+
+// データ不足の判定（30 秒以上で 10 点未満なら破棄を確認する）
+assert(isInsufficient({ durationSec: 30, count: 3 }), 'データ不足: 30秒で3点は不足');
+assert(!isInsufficient({ durationSec: 30, count: 10 }), 'データ不足: 10点あれば確認しない');
+assert(!isInsufficient({ durationSec: 20, count: 3 }), 'データ不足: 30秒未満は確認しない（意図的な手動停止）');
+assert(!isInsufficient({ durationSec: 60, count: 0 }), 'データ不足: 0点は別扱い（確認せず削除）');
+assert(buildSummary({ stats: null, stopReason: 'stalled' }).count === 0, 'summary: 集計なしでも停止理由は残す');
 
 // ---- 端末内蔵GNSS の並行取得と比較（仕様 4-8 / 5-4） ----
 
@@ -451,7 +604,9 @@ assert(formatCompare(snrStats, null) === '', '比較テキスト: 比較デー�
 // 記録フロー：並行取得ありの record → stop → save
 const fakeDevice = { started: 0, stopped: 0, status: 'watching', start() { this.started++; }, stop() { this.stopped++; }, setPaused() {} };
 const rec2 = new Recorder(fakeStorage, { deviceGnss: fakeDevice });
-rec2.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0, withDevice: true });
+await tick();
+await rec2.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0, withDevice: true });
+const draft2 = rec2.currentId;
 assert(fakeDevice.started === 1, '記録: withDevice で内蔵GNSSの取得を開始する');
 // Android は「OSが測位を確定した時刻(t)」と「アプリが受け取った時刻(recvAt)」が数秒ずれる。
 // 区間の突き合わせは recvAt 側で行う（M10S の recvAt と同じ役割）。
@@ -463,7 +618,7 @@ for (let i = 0; i < 3; i++) {
 }
 const pending2 = rec2.stop('manual');
 assert(fakeDevice.stopped === 1, '記録: stop で内蔵GNSSの取得を止める');
-assert(pending2.deviceStats.count === 2 && pending2.deviceSamples.length === 2, '記録: 内蔵GNSSを同区間で集計する');
+assert(pending2.deviceStats.count === 2, '記録: 内蔵GNSSを同区間で集計する');
 assert(pending2.deviceStats.offsetFromRef != null, '記録: 内蔵GNSSの中心ズレは M10S 中心を基準にする');
 assert(pending2.window.device.count === 2 && pending2.window.overlap.overlapSec === 1, '記録: 2系統の区間の重なりを残す');
 assert(pending2.window.overlap.coverDevice === 1, '記録: Android 区間は NMEA 区間に収まっている');
@@ -476,8 +631,9 @@ assert(
 );
 assert(pending2.window.deviceLagMs === 2500, '記録: Android の測位の古さ（受信 − 測位確定）を残す');
 
-const entry2 = await rec2.save(pending2, { label: '比較テスト' });
-assert(entry2.point.deviceSamples.length === 2 && entry2.point.deviceStats != null, '記録: save で内蔵GNSSも保存する');
+await rec2.settled();
+const entry2 = await confirmDraft(fakeStorage, draft2, '比較テスト');
+assert(entry2.point.deviceSamples.length === 2 && entry2.point.deviceStats != null, '記録: 内蔵GNSSもチャンクへ保存する');
 assert(entry2.session.summary.deviceDrms != null && entry2.session.summary.deviceCount === 2, '記録: summary に内蔵GNSSの比較値を残す');
 assert(entry2.session.window?.overlap != null, '記録: 測定区間を session に残す（保存後も対応を検証できる）');
 
@@ -491,13 +647,17 @@ assert(COMPARE_HEADER[35] === 'overlap_s' && row[35] === 1, '対応表: 区間�
 
 // 並行取得 OFF のときは従来どおりの形（余計なキーを増やさない）
 const rec3 = new Recorder(fakeStorage, { deviceGnss: fakeDevice });
-rec3.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+await tick();
+await rec3.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0 });
+const draft3 = rec3.currentId;
 rec3.addDeviceSample({ t: 1, lat: 34.9, lon: 135.5, accuracy: 4 }); // withDevice でないので捨てる
 rec3.addEpoch({ t: new Date(), recvAt: Date.now(), lat: 34.8536, lon: 135.472, fixQuality: 1, fixMode: 3, satsUsed: 10 });
 const pending3 = rec3.stop('manual');
-assert(pending3.deviceStats === null && pending3.deviceSamples.length === 0, '記録: OFF なら内蔵GNSSを集めない');
-const entry3 = await rec3.save(pending3, { label: '比較なし' });
+assert(pending3.deviceStats === null, '記録: OFF なら内蔵GNSSを集めない');
+await rec3.settled();
+const entry3 = await confirmDraft(fakeStorage, draft3, '比較なし');
 assert(!('deviceStats' in entry3.point) && !('deviceDrms' in entry3.session.summary), '記録: OFF の記録の形は従来どおり');
+assert(!('deviceSamples' in entry3.point), '記録: OFF の記録に deviceSamples キーを作らない');
 
 // ---- 取込（単体 JSON / 調査日バンドル JSON） ----
 const importStore = makeFakeStorage();

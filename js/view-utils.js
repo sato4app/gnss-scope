@@ -91,7 +91,10 @@ const STOP_LABEL = {
   timeout: '上限時間で停止',
   maxEpochs: '上限エポックで停止',
   manual: '手動停止',
-  interrupted: '中断で停止', // 画面OFF・他アプリへの切替が猶予を超えた
+  stalled: 'データ途絶で停止', // 最終エポックから 10 秒（画面OFF・BLE切断・fix喪失）
+  storageError: '保存失敗で停止', // 記録中の追記が続けて失敗した
+  crashed: '記録中に中断', // 停止処理が走らないまま落ちた記録を後から確定した
+  interrupted: '中断で停止', // 旧版のデータ用（現在は発生しない）
 };
 
 // 停止サマリ（記録タブの1行目。詳細は ▶ の中）。仕様 2・3。
@@ -233,6 +236,13 @@ export function sessionMeta(session) {
     window: session.window,
     summary: session.summary,
   };
+}
+
+// 下書き行の見出し（地点名がまだ無いので時刻で識別する）。
+// stopReason が無い＝停止処理が走らないまま落ちた記録。そうと分かるように書き分ける。
+export function draftHeadText(session) {
+  const time = localTime(session.endedAt ?? session.createdAt);
+  return session.summary?.stopReason ? `${time} 停止` : `${time} まで（記録中に中断）`;
 }
 
 // 記録一覧の副見出しテキスト

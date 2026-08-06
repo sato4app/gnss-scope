@@ -208,22 +208,3 @@ export function surveySummary(sessions) {
   };
 }
 
-// ---- v1 → v2 移行 ----
-
-// surveyId / pointNo を持たない既存セッションへ、createdAt から採番する。
-// 同じ調査日の中は createdAt の昇順で 1 から振る。
-// 戻り値は { id, surveyId, pointNo } の配列（呼び出し側が該当レコードへ書き戻す）。
-export function assignSurveyKeys(sessions) {
-  const byDay = new Map();
-  for (const s of [...(sessions || [])].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0))) {
-    const surveyId = s.surveyId || surveyIdOf(s.createdAt);
-    const list = byDay.get(surveyId) || [];
-    list.push(s);
-    byDay.set(surveyId, list);
-  }
-  const out = [];
-  for (const [surveyId, list] of byDay) {
-    list.forEach((s, i) => out.push({ id: s.id, surveyId, pointNo: Number.isFinite(s.pointNo) ? s.pointNo : i + 1 }));
-  }
-  return out;
-}

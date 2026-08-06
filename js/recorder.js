@@ -1,33 +1,54 @@
 // 記録（record → stop → save）。静止点に留まって連続エポックを収集し、
 // 停止時に「ばらつき（DRMS / CEP / 散布図）」を集計する。
-//   record: 収集開始。autoStop 有効時は「最低 minSec 秒 → 中心・DRMS が holdSec 秒横ばい」で
-//           自動停止する（docs/algospec-202607.md 3.）。maxSec/maxEpochs はタイムアウト（保険）。
-//   stop:   収集停止。集計結果を「未保存の記録（pending）」として返すだけで DB には書かない。
-//   save:   ラベル・メモを付けて IndexedDB（storage.js）へ保存する。
+//   record: 下書きを作ってから収集開始。autoStop 有効時は「最低 minSec 秒 → 中心・DRMS が
+//           holdSec 秒横ばい」で自動停止する（docs/algospec-202607.md 3.）。
+//   stop:   収集停止。集計して下書きに書き足す。まだ地点にはしない。
+//   save:   ラベル・メモを付けて確定する（record-ui.js 側。地点番号はそこで採番）。
 // 集計は accuracy.js の computeStaticStats。測定区間の受信品質（rxStats）も
 // summary に残す（docs/algospec-202607.md 5.）。
+//
+// **記録中に 5 エポックごとチャンクを追記する**のがこのモジュールの要。停止まで
+// メモリに溜め込まないので、アプリが落ちても直近フラッシュまでは残る。停止時に
+// 1.6MB の生NMEA を一度に書いていた頃のような、まとまった書き込みも起きない。
 //
 // 1地点の記録で 2 系統を同時に集める（仕様 4-8）:
 //   GNSS受信機   生NMEA行（rawNmea）＋ パース済みエポック（samples）
 //   Android内蔵  OS の測位（deviceSamples）
-// どちらも同じ point レコードへ入れ、地点番号（surveyId + pointNo）を付けて保存するので、
+// どちらも同じチャンクへ入れ、確定時に地点番号（surveyId + pointNo）を付けるので、
 // 1日に何十地点まわっても「どの受信機データとどの Android データが対か」は後から必ず辿れる。
 // 2系統が本当に同じ時間に取れていたかは window.overlap で検証する（js/survey.js）。
 //
-// 画面OFF・他アプリへの切替が続いた場合は一時停止ではなく stop('interrupted') で
-// 打ち切る（仕様 3-7）。BLE が切れて穴の空いた区間を1地点として残さないため。
-// 復帰後は続きではなく別の地点として測り直す。猶予の判定は app.js 側。
+// データが届かなくなったら停止する（仕様 3-7）。画面OFF・BLE切断・受信機の電池切れ・
+// fix 喪失を一様に拾うため、契機は「画面が隠れたか」ではなく「エポックが来ているか」。
 // 記録タブの UI 配線（ボタン・表示）は record-ui.js 側。
 import { computeStaticStats, computeDeviceStats, evaluateConvergence } from './accuracy.js';
 import { diffRxStats } from './stream-stats.js';
-import { buildWindow, nextPointNo, pointLabel, surveyIdOf } from './survey.js';
+import { buildWindow, surveyIdOf } from './survey.js';
 
 // 収束自動停止の判定パラメータ（設定画面には出さないモジュール定数）
 const CONVERGENCE = { holdSec: 10, centerTolM: 0.3, drmsTolAbsM: 0.3, drmsTolPct: 0.05 };
 
-// 生NMEA行の上限（保険）。maxSec=0（無制限）で走らせ続けても端末を圧迫しないようにする。
+// データ途絶で打ち切るまでの時間 [ms]。1Hz なので通常は 1 秒間隔でエポックが来る。
+// BLE の瞬断は自動再接続で復帰する（transport.js のバックオフ 500ms 起点）ため、
+// 再接続が間に合う長さにする。短くすると瞬断のたびに記録が終わってしまう。
+const STALL_MS = 10000;
+
+// 何エポックぶんを 1 チャンクにまとめるか。1 エポックごとでも動くがトランザクションが
+// 5 倍になる。5 秒ぶんを失っても集計はほとんど動かないので、この粒度で釣り合う。
+const FLUSH_EPOCHS = 5;
+
+// フラッシュがこの回数続けて失敗したら記録を打ち切る。以降のデータを取り続けても残せない。
+const MAX_FLUSH_FAILURES = 3;
+
+// データ不足の確認を出す条件。1Hz なので 30 秒あれば 30 点が期待値で、
+// 10 点未満は取得率 33% 未満。computeStaticStats は 1 点でも値を返すため、
+// このまま地点にすると DRMS がほぼ 0 という偽の「良い値」が残ってしまう。
+const INSUFFICIENT = { minSec: 30, minCount: 10 };
+
+// 生NMEA行の上限（保険）。maxSec=0（無制限）で走らせ続けても DB を圧迫しないようにする。
 // 1Hz で 10〜20 行/秒なので、20000 行 ≈ 20〜30 分ぶん（約 1.6 MB）。
 // 打ち切った場合は rawTruncated に本数を残し、記録が途中までであることを隠さない。
+// （フラッシュのたびにバッファを捨てるので、メモリ側の理由での上限ではなくなった。）
 const MAX_RAW_LINES = 20000;
 
 // サンプル列が実際にデータを返していた長さ [秒]。0〜1点なら 0。
@@ -82,15 +103,48 @@ function toSample(epoch) {
   };
 }
 
+// 集計値 → session.summary（一覧・エクスポート・停止サマリが読む形）。
+// stats が無い（有効エポック0点）ときも stopReason だけは残す。
+export function buildSummary({ stats, deviceStats, stopReason, autoStop, rxStats, rawLines, rawTruncated }) {
+  const base = {
+    count: stats?.count ?? 0,
+    stopReason,
+    autoStop,
+    rxStats,
+    rawLines,
+    rawTruncated: rawTruncated || 0,
+  };
+  if (!stats) return base;
+  return {
+    ...base,
+    lat: stats.center.lat,
+    lon: stats.center.lon,
+    altMSL: stats.altMean,
+    drms: stats.drms,
+    cep50: stats.cep50,
+    cep95: stats.cep95,
+    // 一覧で GNSS受信機 と並べて見せるための比較値
+    ...(deviceStats ? { deviceDrms: deviceStats.drms, deviceCount: deviceStats.count } : {}),
+  };
+}
+
+// 「データとして不足している」記録か（停止時に破棄を確認する条件）
+export function isInsufficient({ durationSec, count }) {
+  return durationSec >= INSUFFICIENT.minSec && count > 0 && count < INSUFFICIENT.minCount;
+}
+
 export class Recorder {
-  constructor(storage, { onUpdate, onStop, getRxStats, deviceGnss } = {}) {
+  constructor(storage, { onUpdate, onStop, onFlushError, getRxStats, deviceGnss } = {}) {
     this.storage = storage;
     this.onUpdate = onUpdate || (() => {}); // 収集中のライブ表示更新
     this.onStop = onStop || (() => {}); // 自動停止を含む停止通知（引数 = pending）
+    this.onFlushError = onFlushError || (() => {}); // 追記の失敗通知（引数 = 連続失敗回数）
     this.getRxStats = getRxStats || null; // 受信品質統計の snapshot 提供元（app.js）
     this.deviceGnss = deviceGnss || null; // Android内蔵GNSS の並行取得（null 可）
     this.latestEpoch = null;
-    this.current = null; // 収集中: { startedAt, samples, rawNmea, maxSec, maxEpochs, paused, ... }
+    this.current = null; // 収集中: { id, startedAt, samples, buf*, maxSec, maxEpochs, ... }
+    this.finishing = null; // 停止時の書き込み（確定はこれを待ってから行う）
+    this.stallTimer = null;
   }
 
   // 受信した NMEA 行を1本ずつ渡す（app.js の受信パイプラインから）。
@@ -99,11 +153,12 @@ export class Recorder {
   addRawLine(line) {
     const rec = this.current;
     if (!rec || !rec.saveRaw) return;
-    if (rec.rawNmea.length >= MAX_RAW_LINES) {
+    if (rec.rawCount >= MAX_RAW_LINES) {
       rec.rawTruncated++;
       return;
     }
-    rec.rawNmea.push({ t: Date.now(), line });
+    rec.rawCount++;
+    rec.bufRaw.push({ t: Date.now(), line });
   }
 
   // 毎エポック呼ぶ。収集中なら fix のあるエポックを蓄積する。
@@ -113,7 +168,14 @@ export class Recorder {
     if (!rec) return;
     if (epoch.lat == null || epoch.lon == null || !(epoch.fixQuality > 0)) return;
 
-    rec.samples.push(toSample(epoch));
+    // 途絶判定の基準。fix を失っている間はここへ来ないので、fix 喪失も途絶として扱う
+    rec.lastEpochAt = Date.now();
+
+    const sample = toSample(epoch);
+    rec.samples.push(sample); // 暫定集計に全件要るのでメモリにも残す
+    rec.bufSamples.push(sample);
+    rec.epochsSinceFlush++;
+
     const elapsedSec = (Date.now() - rec.startedAt) / 1000;
     const stats = computeStaticStats(rec.samples); // 暫定ばらつき（点数は高々数百なので毎回計算で十分軽い）
     // Android内蔵GNSS の暫定集計も同じ頻度で更新する（比較を記録中から見せるため）
@@ -139,8 +201,11 @@ export class Recorder {
       stats,
       convergence,
       device: this._deviceInfo(),
-      rawLines: rec.saveRaw ? rec.rawNmea.length : null,
+      rawLines: rec.saveRaw ? rec.rawCount : null,
     });
+
+    // まとまったら追記する。await しない（受信経路を待たせない）
+    if (rec.epochsSinceFlush >= FLUSH_EPOCHS) this._flush(rec);
 
     // 収束停止（最低時間経過＋直近 holdSec 窓で中心・DRMS 横ばい）
     if (convergence && convergence.stable) {
@@ -160,12 +225,18 @@ export class Recorder {
     return !!this.current;
   }
 
+  // 収集中の下書き id（記録一覧でその行の操作を止めるために使う）
+  get currentId() {
+    return this.current?.id ?? null;
+  }
+
   // Android内蔵GNSS の 1 サンプル（device-gnss.js → app.js 経由。収集中のみ蓄積する）
   addDeviceSample(sample) {
     const rec = this.current;
     if (!rec || !rec.withDevice) return;
     if (sample?.lat == null || sample.lon == null) return;
     rec.deviceSamples.push(sample);
+    rec.bufDevice.push(sample);
   }
 
   // 収集状況表示用（記録タブの散布図凡例）。並行取得していなければ null。
@@ -182,12 +253,69 @@ export class Recorder {
     };
   }
 
+  // ---- 追記（5 エポックごと） ----
+
+  // バッファを 1 チャンクとして書き出す。**await しない**で呼ぶこと。
+  // 失敗したぶんはバッファへ戻し、次のチャンクにまとめて再試行する。
+  _flush(rec) {
+    const hasRaw = rec.saveRaw && rec.bufRaw.length > 0;
+    if (!rec.bufSamples.length && !rec.bufDevice.length && !hasRaw) return null;
+
+    const data = { samples: rec.bufSamples.slice() };
+    if (rec.saveRaw) data.rawNmea = rec.bufRaw.slice();
+    if (rec.bufDevice.length) data.deviceSamples = rec.bufDevice.slice();
+    rec.bufSamples.length = 0;
+    rec.bufRaw.length = 0;
+    rec.bufDevice.length = 0;
+    rec.epochsSinceFlush = 0;
+
+    const progress = {
+      endedAt: Date.now(),
+      summary: {
+        count: rec.samples.length,
+        rawLines: rec.saveRaw ? rec.rawCount : null,
+        deviceCount: rec.deviceSamples.length,
+      },
+    };
+    return this.storage.appendChunk(rec.id, rec.seq++, data, progress).then(
+      () => {
+        rec.flushFailures = 0;
+      },
+      (e) => {
+        // 収集済みのぶんを捨てない。新しく積まれたデータの前へ戻す（時系列を保つ）
+        rec.bufSamples.unshift(...data.samples);
+        if (data.rawNmea) rec.bufRaw.unshift(...data.rawNmea);
+        if (data.deviceSamples) rec.bufDevice.unshift(...data.deviceSamples);
+        rec.flushFailures++;
+        this.onFlushError(rec.flushFailures, e);
+        // 書けない状態で取り続けても残せない。打ち切って下書きとして回収させる
+        if (rec.flushFailures >= MAX_FLUSH_FAILURES && this.current === rec) this.stop('storageError');
+      }
+    );
+  }
+
   // ---- record ----
-  start({ maxSec = 60, maxEpochs = 120, autoStop = true, minSec = 30, withDevice = false, saveRaw = true } = {}) {
-    if (this.current) return;
+  // 下書きを作ってから収集を始める。作れなければ記録しない（残せない記録は始めない）。
+  async start({ maxSec = 60, maxEpochs = 120, autoStop = true, minSec = 30, withDevice = false, saveRaw = true } = {}) {
+    if (this.current) return null;
+    const startedAt = Date.now();
+    const id = `rec_${startedAt}`;
+    const surveyId = surveyIdOf(startedAt);
+    await this.storage.createDraft({ id, startedAt, surveyId }); // 失敗は呼び出し側へ投げる
+
     this.current = {
-      startedAt: Date.now(),
+      id,
+      surveyId,
+      startedAt,
+      lastEpochAt: startedAt, // 途絶判定の起点
       samples: [],
+      deviceSamples: [], // Android内蔵GNSS のサンプル（受信機とはレートも点数も揃わない）
+      bufSamples: [], // 次のチャンクへ入れるぶん（フラッシュで空にする）
+      bufRaw: [],
+      bufDevice: [],
+      seq: 0, // チャンクの通し番号
+      epochsSinceFlush: 0,
+      flushFailures: 0,
       maxSec,
       maxEpochs,
       autoStop, // 収束自動停止の有効/無効
@@ -195,13 +323,13 @@ export class Recorder {
       convHistory: [], // [{ t, lat, lon, drms }] 品質ゲート通過エポックのみ
       rxStart: this.getRxStats ? this.getRxStats() : null, // 受信品質の測定開始時点
       saveRaw, // 生NMEA行も残すか（設定 saveRawNmea）
-      rawNmea: [], // [{ t, line }] 受信した NMEA 行そのもの
+      rawCount: 0, // 受け入れた生NMEA行数（配列は持たないので数だけ数える）
       rawTruncated: 0, // 上限超過で捨てた行数
       withDevice: withDevice && !!this.deviceGnss, // Android内蔵GNSS を並行取得するか
-      deviceSamples: [], // Android内蔵GNSS のサンプル（受信機とはレートも点数も揃わない）
       deviceStats: null,
     };
     if (this.current.withDevice) this.deviceGnss.start();
+    this._startStallTimer();
     this.onUpdate({
       count: 0,
       elapsedSec: 0,
@@ -210,120 +338,102 @@ export class Recorder {
       device: this._deviceInfo(),
       rawLines: saveRaw ? 0 : null,
     });
+    return this.current.id;
+  }
+
+  // データが届かなくなったら打ち切る。停止判定は addEpoch の中にしか無いため、
+  // エポックが来なくなると記録が凍る（それを防ぐのがこのタイマー）。
+  _startStallTimer() {
+    this._stopStallTimer();
+    this.stallTimer = setInterval(() => {
+      const rec = this.current;
+      if (rec && Date.now() - rec.lastEpochAt > STALL_MS) this.stop('stalled');
+    }, 1000);
+  }
+
+  _stopStallTimer() {
+    if (this.stallTimer != null) clearInterval(this.stallTimer);
+    this.stallTimer = null;
   }
 
   // ---- stop ----
-  // 収集を止めて集計する。DB へは書かず「未保存の記録」を返す（保存は save()）。
-  // reason: 'converged' | 'timeout' | 'maxEpochs' | 'manual' | 'interrupted'
+  // 収集を止めて集計し、「未確定の記録」を返す。DB への書き込みは描画の後に走らせる
+  // （await しない）。確定は書き込みの完了を待ってから行う（settled()）。
+  // reason: 'converged' | 'timeout' | 'maxEpochs' | 'manual' | 'stalled' | 'storageError'
   stop(reason = 'manual') {
     const rec = this.current;
     if (!rec) return null;
     this.current = null;
+    this._stopStallTimer();
     // 状態は watch を止める前に控える（stop() で idle に戻るため）。
     // 1点も取れなかった理由（未許可・非対応など）を停止後の表示にも残す。
     const deviceStatus = rec.withDevice ? this.deviceGnss.status : null;
     if (rec.withDevice) this.deviceGnss.stop();
 
     const stats = computeStaticStats(rec.samples);
+    const deviceStats = rec.withDevice ? computeDeviceStats(rec.deviceSamples, stats?.center || null) : null;
     const endedAt = Date.now();
-    const pending = {
-      stats,
+    const window = buildWindow({
+      startedAt: rec.startedAt,
+      endedAt,
       samples: rec.samples,
-      // 生NMEA行（保存 OFF なら null。空配列と「取っていない」を区別する）
-      rawNmea: rec.saveRaw ? rec.rawNmea : null,
-      rawTruncated: rec.rawTruncated,
-      // Android内蔵GNSS の比較値（GNSS受信機の中心を基準にズレを出す）
       deviceSamples: rec.deviceSamples,
-      deviceStats: rec.withDevice ? computeDeviceStats(rec.deviceSamples, stats?.center || null) : null,
+    });
+    const summary = buildSummary({
+      stats,
+      deviceStats,
+      stopReason: reason,
+      autoStop: rec.autoStop,
+      // この測定区間の受信品質（開始時点との差分）。取りこぼし確認用。
+      rxStats: this.getRxStats ? diffRxStats(this.getRxStats(), rec.rxStart) : null,
+      rawLines: rec.saveRaw ? rec.rawCount : null,
+      rawTruncated: rec.rawTruncated,
+    });
+
+    const pending = {
+      sessionId: rec.id,
+      surveyId: rec.surveyId,
+      stats,
+      summary,
+      window,
+      // Android内蔵GNSS の比較値（GNSS受信機の中心を基準にズレを出す）
+      deviceStats,
       deviceStatus,
       deviceSpanSec: spanSecOf(rec.deviceSamples),
       startedAt: rec.startedAt,
       endedAt,
-      // 2系統それぞれの実測区間と、その重なり（地点の対応を後から検証するため）
-      window: buildWindow({
-        startedAt: rec.startedAt,
-        endedAt,
-        samples: rec.samples,
-        deviceSamples: rec.deviceSamples,
-      }),
       stopReason: reason,
       // 収束判定を働かせていたか。停止サマリで「未収束」と「収束判定なし」を
       // 書き分けるのに要る（自動停止 OFF のときは未収束ではない。仕様 2）。
       autoStop: rec.autoStop,
-      // この測定区間の受信品質（開始時点との差分）。取りこぼし確認用。
-      rxStats: this.getRxStats ? diffRxStats(this.getRxStats(), rec.rxStart) : null,
+      rxStats: summary.rxStats,
     };
     this.onStop(pending);
+    // 描画の後に書く。1.6MB を一度に、ではなく残りのバッファぶんだけなので軽い
+    this.finishing = this._finish(rec, { stats, deviceStats, summary, window, endedAt });
     return pending;
   }
 
-  // ---- save ----
-  // 未保存の記録に地点名・メモを付けて IndexedDB へ保存する。
-  // 保存時に調査日（surveyId）と同日連番（pointNo）を採番し、ツリーの根 surveys も用意する。
-  async save(pending, { label = '', memo = '' } = {}) {
-    if (!pending) throw new Error('保存する記録がありません');
-    const st = pending.stats;
-    const dst = pending.deviceStats;
-
-    const surveyId = surveyIdOf(pending.startedAt);
-    const pointNo = nextPointNo(await this.storage.getSessionsBySurvey(surveyId), surveyId);
-    await this.storage.ensureSurvey(surveyId, pending.startedAt);
-
-    const id = `rec_${pending.startedAt}`;
-    const session = {
-      id,
-      type: 'record',
-      surveyId, // ツリーの根（調査日）への参照
-      pointNo, // 同じ調査日の中での地点番号
-      label: label || pointLabel(surveyId, pointNo),
-      memo,
-      createdAt: pending.startedAt,
-      endedAt: pending.endedAt,
-      window: pending.window, // 2系統の測定区間と重なり（地点の対応の検証用）
-      summary: st
-        ? {
-            lat: st.center.lat,
-            lon: st.center.lon,
-            altMSL: st.altMean,
-            count: st.count,
-            drms: st.drms,
-            cep50: st.cep50,
-            cep95: st.cep95,
-            stopReason: pending.stopReason,
-            autoStop: pending.autoStop,
-            rxStats: pending.rxStats,
-            rawLines: pending.rawNmea ? pending.rawNmea.length : null,
-            rawTruncated: pending.rawTruncated || 0,
-            // 一覧で GNSS受信機 と並べて見せるための比較値
-            ...(dst ? { deviceDrms: dst.drms, deviceCount: dst.count } : {}),
-          }
-        : {
-            count: 0,
-            stopReason: pending.stopReason,
-            autoStop: pending.autoStop,
-            rxStats: pending.rxStats,
-            rawLines: pending.rawNmea ? pending.rawNmea.length : null,
-            rawTruncated: pending.rawTruncated || 0,
-          },
-    };
-    const point = {
-      id: `${id}_p`,
-      sessionId: id,
-      surveyId, // 葉からも調査日・地点番号が分かるようにする（エクスポート先でも同じ）
-      pointNo,
-      kind: 'record',
-      stats: st, // 集計値（中心・標準偏差・DRMS・CEP・散布図オフセット等）
-      samples: pending.samples, // 生エポック群（衛星リスト込み）
-    };
-    // 生NMEA行は取ったときだけ足す（OFF の記録の形は従来どおり）
-    if (pending.rawNmea) point.rawNmea = pending.rawNmea;
-    // Android内蔵GNSS を取れたときだけ足す
-    if (dst) {
-      point.deviceSamples = pending.deviceSamples;
-      point.deviceStats = dst;
+  async _finish(rec, meta) {
+    try {
+      // 有効エポックが 0 点なら復元しても使えない。下書きごと片付ける
+      if (!meta.stats) {
+        await this.storage.deleteSession(rec.id);
+        return;
+      }
+      await this._flush(rec); // 5 エポック未満の端数もそのまま書く
+      await this.storage.finishDraft(rec.id, meta);
+    } catch (e) {
+      this.onFlushError(rec.flushFailures + 1, e);
     }
-    await this.storage.putSession(session);
-    await this.storage.putPoint(point);
-    return { session, point };
+  }
+
+  // 停止時の書き込みが終わるのを待つ（確定・破棄の前に呼ぶ）
+  async settled() {
+    try {
+      await this.finishing;
+    } catch (_) {
+      // 失敗は onFlushError で通知済み。確定は続行させる（書けているぶんは残っている）
+    }
   }
 }

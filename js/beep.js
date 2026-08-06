@@ -1,7 +1,7 @@
 // 記録の自動停止を音で知らせる（仕様 2）。
 //   収束で自動停止   短いビープ2回（高め）＝ 良い結果で終わった
-//   上限時間/上限エポックで停止  長いビープ1回（低め）＝ 未収束のまま打ち切った
-//   手動停止・中断停止は鳴らさない（操作した本人が分かっているため）
+//   上限時間/上限エポック/データ途絶/保存失敗で停止  長いビープ1回（低め）＝ 打ち切った
+//   手動停止は鳴らさない（操作した本人が分かっているため）
 // 画面を見ていなくても「もう動いてよいか / 測り直すか」が音だけで判断できるようにする。
 //
 // AudioContext は自動再生ポリシーにより、ユーザー操作のハンドラ内でしか作れない。
@@ -64,9 +64,13 @@ export class Beeper {
 }
 
 // 停止理由 → 鳴らすパターン名（鳴らさないものは null）。
-// 手動停止（manual）と中断停止（interrupted）は無音。
+// 手動停止（manual）だけ無音。データ途絶（stalled）と保存失敗（storageError）は
+// 本人が停止を分かっていない自動停止なので鳴らす。画面を見ずに「受信が切れた」と
+// 気付けるほうが、現場では価値が大きい。
+const TIMEOUT_LIKE = ['timeout', 'maxEpochs', 'stalled', 'storageError'];
+
 export function beepFor(stopReason) {
   if (stopReason === 'converged') return 'converged';
-  if (stopReason === 'timeout' || stopReason === 'maxEpochs') return 'timeout';
+  if (TIMEOUT_LIKE.includes(stopReason)) return 'timeout';
   return null;
 }

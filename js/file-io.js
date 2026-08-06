@@ -324,6 +324,7 @@ async function importOne(src, survey, storage) {
     ...src.session,
     id,
     type: 'record',
+    status: 'confirmed', // 取り込んだ地点は最初から確定済み（下書きにはしない）
     surveyId,
     pointNo,
     label: src.session.label || `取込 ${new Date().toLocaleString('ja-JP')}`,
@@ -343,16 +344,16 @@ async function importOne(src, survey, storage) {
       ...(deviceStats ? { deviceDrms: deviceStats.drms, deviceCount: deviceStats.count } : {}),
     },
   };
-  const point = { id: `${id}_p`, sessionId: id, surveyId, pointNo, kind: 'record', stats, samples: src.point.samples };
-  if (rawNmea) point.rawNmea = rawNmea;
-  if (deviceStats) {
-    point.deviceSamples = deviceSamples;
-    point.deviceStats = deviceStats;
-  }
+  // 実データは 1 チャンクとして入れる（読み出し経路を記録と 1 本にするため）。
+  // point 側には集計値だけを置く。
+  const point = { id: `${id}_p`, sessionId: id, surveyId, pointNo, kind: 'record', stats };
+  if (deviceStats) point.deviceStats = deviceStats;
+  const data = { samples: src.point.samples };
+  if (rawNmea) data.rawNmea = rawNmea;
+  if (deviceSamples?.length) data.deviceSamples = deviceSamples;
 
-  await storage.putSession(session);
-  await storage.putPoint(point);
-  return { session, point };
+  await storage.putImported(session, point, data);
+  return { session, point: { ...point, ...data } };
 }
 
 // 取り込んだ JSON の最低限の妥当性チェック。単体（format 1）とバンドル（format 2）の両方を受ける。

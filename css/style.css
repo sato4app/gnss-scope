@@ -166,6 +166,17 @@ body {
 }
 .note-dim { color: var(--muted); font-size: 12px; margin-top: 12px; }
 .note-inline { color: var(--muted); font-size: 11px; margin-left: auto; }
+/* 記録中の追記に失敗したときの警告（黙って握り潰さないための表示） */
+.note-error {
+  background: #2f1414;
+  border: 1px solid #6b2626;
+  color: var(--bad);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.note-error[hidden] { display: none; }
 
 .result-box {
   font-size: 12px;
@@ -304,6 +315,18 @@ body {
   color: #06281a;
 }
 .session-list .s-type.imported { background: var(--c-qzss); color: #fff; }
+/* 下書き＝停止しただけでまだ地点になっていない記録。確定済みと一目で区別する */
+.session-list .s-type.draft { background: var(--warn); color: #2b2410; }
+.session-list .s-type.recording { background: var(--bad); color: #fff; }
+.session-list .draft-form { margin-top: 8px; }
+.session-list .draft-form .btn { flex: 0 0 auto; }
+.session-list .sv-draft {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--warn);
+  color: #2b2410;
+}
 .session-list .s-label { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-list .s-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .session-list .s-pair { font-variant-numeric: tabular-nums; }

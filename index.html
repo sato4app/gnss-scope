@@ -56,12 +56,14 @@
     <!-- 画面は上から「操作 → 進捗 → 図 → 結果 → 保存」の順。測っている間に見るものだけを
          開いた状態にし、後から確認するもの（現在の測位値・測位結果の明細）は畳んでおく。 -->
     <section class="page" id="page-record">
-      <div class="note">⚠ 記録は画面表示中のみ有効です（画面OFF・他アプリへの切替が5秒を超えると記録を中断します。再開は別の地点として測り直してください）</div>
+      <div class="note">⚠ 記録は記録専用の端末で行ってください（データが10秒届かないと記録を打ち切ります。地図や写真は別の端末で）。記録中も5秒ごとに保存されるため、停止前にアプリが終了しても直前までは残ります</div>
       <div class="rec-actions">
         <button id="btn-record" class="btn primary">⏺ 記録</button>
         <button id="btn-stop" class="btn" disabled>⏹ 停止</button>
         <button id="btn-save" class="btn" disabled>💾 保存</button>
+        <button id="btn-discard" class="btn danger" disabled>🗑 破棄</button>
       </div>
+      <div id="rec-write-error" class="note-error" hidden></div>
 
       <!-- 収束の進捗（記録中のみ）。主バー=経過/上限、副バー=収束判定の2フェーズ -->
       <div id="rec-progress" class="rec-progress" hidden>
@@ -127,7 +129,7 @@
         <button id="btn-import" class="btn">📂 JSON取込</button>
         <input id="file-import" type="file" accept="application/json,.json" hidden>
       </div>
-      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の GNSS受信機と Android内蔵の測位は同じレコードに入るため対応が崩れません。調査日の「対応表CSV」で 1行1地点の比較表を出せます。</div>
+      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の GNSS受信機と Android内蔵の測位は同じレコードに入るため対応が崩れません。調査日の「対応表CSV」で 1行1地点の比較表を出せます。「下書き」は停止しただけでまだ地点になっていない記録で、地点番号・集計・エクスポートの対象外です。保存すると地点になります。</div>
       <ul id="session-list" class="session-list"></ul>
     </section>
 

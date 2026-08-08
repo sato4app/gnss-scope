@@ -1,20 +1,30 @@
-// 記録のファイル入出力。
-//   地点ごと: CSV / GPX / NMEA（生行）/ JSON（生エポック＋生NMEA＋集計値）
-//   調査日ごと: 対応表CSV（1行1地点）/ バンドルJSON（その日の全地点をまとめて1ファイル）
-//   入力: 出力した JSON（単体・バンドルとも）を読み戻して IndexedDB へ取り込む
+// 記録のファイル入出力。ここは「文字列を組み立てる」ところまでを担い、
+// どのファイルをどう束ねるかは js/package-io.js（出力ZIP）が決める。
+//   epochs.csv     1行1エポック（使用衛星の平均 C/N0 を含む）
+//   device.csv     1行1サンプル（Android内蔵。レートが違うのでエポックとは別表にする）
+//   track.gpx      記録の中心を wpt、生エポック群を trk
+//   raw.nmea       受信した行そのもの（**無加工**。コメント行も入れない）
+//   raw_index.csv  エポック ↔ raw.nmea の行番号（生NMEA と測位結果の紐付け）
+//   point.json     地点まるごと（format 1。単体でも取込できる）
+//   survey.json    調査日のメタ＋全地点の集計値（実データなし）
+//   compare.csv    調査日の対応表（1行1地点で2系統を並べた表）
+// 入力: 出力した JSON（単体 format 1 / バンドル format 2）を読み戻して IndexedDB へ取り込む。
+//       出力ZIP（format 3）の取込は js/package-io.js。
 // いずれも外部送信はしない。
-//   単体   { app:'gnss-scope', format:1, session, point }
-//   バンドル { app:'gnss-scope', format:2, survey, points:[{session, point}] }
 import { escapeMarkup, localStamp } from './view-utils.js';
 import { computeStaticStats, computeDeviceStats } from './accuracy.js';
 import { nextPointNo, surveyIdOf } from './survey.js';
 import { SERIES } from './constants.js';
 
-const JSON_FORMAT = 1; // 地点単体
-const BUNDLE_FORMAT = 2; // 調査日バンドル
+// 地点単体の JSON。バンドル（format 2）は取込でのみ読む（出力は ZIP へ集約した）
+const JSON_FORMAT = 1;
 
-function download(filename, text, mime) {
-  const blob = new Blob([text], { type: mime });
+// Excel がそのまま開けるように CSV は BOM 付き UTF-8 で出す
+const BOM = '﻿';
+
+// text は文字列でも Blob でもよい（ZIP は Blob で来る）
+export function download(filename, text, mime) {
+  const blob = typeof text === 'string' ? new Blob([text], { type: mime }) : text;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -25,7 +35,7 @@ function download(filename, text, mime) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function safeName(label) {
+export function safeName(label) {
   return (label || 'gnss').replace(/[\\/:*?"<>|\s]+/g, '_').slice(0, 40);
 }
 
@@ -42,6 +52,9 @@ function csvCell(v) {
 
 const csvRow = (values) => values.map(csvCell).join(',');
 
+// CSV 1枚ぶん（行の配列 → CRLF 区切りの BOM 付きテキスト）
+const csvText = (lines) => BOM + lines.join('\r\n') + '\r\n';
+
 // 小数の桁を揃える（対応表の見やすさ用。null は空セル）
 const round = (v, digits) => (v == null ? null : +v.toFixed(digits));
 
@@ -57,29 +70,36 @@ function commentBlock(title, pairs) {
   return ['', `# ${title}`, ...pairs.map(([key, value]) => `# ${key},${csvCell(value ?? '')}`)];
 }
 
-// ---- CSV（BOM 付き UTF-8。Excel でそのまま開ける） ----
-export function exportCSV(session, point) {
+// どのファイルにも入れる地点の識別（ファイル単体でも「どの調査日の何番地点か」が分かる）
+function pointIdentity(session) {
+  return [
+    ['survey_id', session.surveyId ?? surveyIdOf(session.createdAt)],
+    ['point_no', session.pointNo],
+    ['label', session.label],
+    ['memo', session.memo],
+    ['started_at_local', localStamp(session.createdAt)],
+    ['ended_at_local', localStamp(session.endedAt)],
+  ];
+}
+
+// ---- epochs.csv（1行1エポック） ----
+export function buildEpochsCsv(session, point) {
   const header = [
     'time_utc', 'recv_at_local', 'lat', 'lon', 'alt_msl_m', 'fix_quality', 'fix_mode',
     'sats_used', 'sats_in_view', 'pdop', 'hdop', 'vdop', 'lat_std_m', 'lon_std_m',
     'speed_kmh', 'course_deg', 'snr_avg_used_dbhz',
   ];
-  const rows = (point?.samples || []).map((s) => csvRow([
-    isoOrEmpty(s.t), localStamp(s.recvAt), s.lat, s.lon, s.altMSL, s.fixQuality, s.fixMode,
-    s.satsUsed, s.satsInView, s.pdop, s.hdop, s.vdop, s.latStd, s.lonStd,
-    s.speedKmh, s.course, avgUsedSnr(s),
-  ]));
+  const lines = [header.join(',')];
+  for (const s of point?.samples || []) {
+    lines.push(csvRow([
+      isoOrEmpty(s.t), localStamp(s.recvAt), s.lat, s.lon, s.altMSL, s.fixQuality, s.fixMode,
+      s.satsUsed, s.satsInView, s.pdop, s.hdop, s.vdop, s.latStd, s.lonStd,
+      s.speedKmh, s.course, avgUsedSnr(s),
+    ]));
+  }
 
-  const lines = [header.join(','), ...rows];
+  lines.push(...commentBlock('地点', pointIdentity(session)));
 
-  // 地点の識別（どの調査日の何番地点か）をファイル単体でも分かるようにする
-  lines.push(...commentBlock('地点', [
-    ['survey_id', session.surveyId], ['point_no', session.pointNo],
-    ['label', session.label], ['memo', session.memo],
-    ['started_at_local', localStamp(session.createdAt)], ['ended_at_local', localStamp(session.endedAt)],
-  ]));
-
-  // 集計値もコメント行として付ける
   const st = point?.stats;
   if (st) {
     lines.push(...commentBlock('集計値', [
@@ -107,12 +127,37 @@ export function exportCSV(session, point) {
       ['device_center_offset_bearing_deg', dst.offsetFromRef?.bearingDeg],
     ]));
   }
-
-  download(`${safeName(session.label)}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  return csvText(lines);
 }
 
-// ---- GPX（記録の中心 = wpt、生エポック群 = trk） ----
-export function exportGPX(session, point) {
+// ---- device.csv（1行1サンプル。Android内蔵） ----
+// エポックと同じ表に混ぜない（レートも点数も揃わず、列の意味が壊れる）。
+// t は「OS が測位を確定した時刻」、recv_at は「アプリが受け取った時刻」で別の時計。
+export function buildDeviceCsv(session, point) {
+  const samples = point?.deviceSamples || [];
+  if (!samples.length) return null;
+  const header = [
+    'fixed_at_utc', 'fixed_at_local', 'recv_at_local', 'lat', 'lon',
+    'accuracy_m', 'altitude_ellipsoid_m', 'altitude_accuracy_m', 'speed_mps', 'heading_deg', 'fix_lag_ms',
+  ];
+  const lines = [header.join(',')];
+  for (const s of samples) {
+    lines.push(csvRow([
+      isoOrEmpty(s.t), localStamp(s.t), localStamp(s.recvAt), s.lat, s.lon,
+      s.accuracy, s.altitude, s.altitudeAccuracy, s.speed, s.heading,
+      s.recvAt != null && s.t != null ? s.recvAt - s.t : null,
+    ]));
+  }
+  lines.push(...commentBlock('地点', pointIdentity(session)));
+  lines.push(...commentBlock(`系統: ${SERIES.device.label}`, [
+    ['samples', samples.length],
+    ['note', 'WiFi/基地局を融合した測位（Fused Location）。GNSS 単独の性能ではない'],
+  ]));
+  return csvText(lines);
+}
+
+// ---- track.gpx（記録の中心 = wpt、生エポック群 = trk） ----
+export function buildGpx(session, point) {
   const parts = [];
   parts.push('<?xml version="1.0" encoding="UTF-8"?>');
   parts.push('<gpx version="1.1" creator="GNSS Scope" xmlns="http://www.topografix.com/GPX/1/1">');
@@ -143,44 +188,109 @@ export function exportGPX(session, point) {
   }
 
   parts.push('</gpx>');
-  download(`${safeName(session.label)}.gpx`, parts.join('\n'), 'application/gpx+xml');
+  return parts.join('\n') + '\n';
 }
 
-// ---- NMEA（受信した生行そのまま。RTKLIB など別ツールへ渡す用） ----
-// 受信時刻はコメント行（NMEA としては無効な行）で先頭にまとめ、本体は行を素のまま出す。
-export function exportNMEA(session, point) {
+// ---- raw.nmea（受信した生行そのまま） ----
+// **無加工**。地点情報のコメント行も入れない（RTKLIB など別ツールへそのまま渡せるように）。
+// どの地点のものかは、置かれているディレクトリと manifest.json / raw_index.csv で辿る。
+export function buildRawNmea(point) {
   const raw = point?.rawNmea;
-  if (!raw?.length) throw new Error('この記録には生NMEAが保存されていません');
-  const header = [
-    `# GNSS Scope raw NMEA`,
-    `# survey_id: ${session.surveyId ?? ''}  point_no: ${session.pointNo ?? ''}  label: ${session.label}`,
-    `# recorded: ${localStamp(session.createdAt)} - ${localStamp(session.endedAt)} (local)`,
-    `# lines: ${raw.length}${session.summary?.rawTruncated ? ` (+${session.summary.rawTruncated} 行は上限超過で未保存)` : ''}`,
-  ];
-  const body = raw.map((r) => r.line);
-  download(`${safeName(session.label)}.nmea`, [...header, ...body].join('\r\n') + '\r\n', 'text/plain;charset=utf-8');
+  if (!raw?.length) return null;
+  return raw.map((r) => r.line).join('\r\n') + '\r\n';
 }
 
-// ---- JSON（セッション＋地点を丸ごと。importSessionFile で読み戻せる） ----
-export function exportJSON(session, point) {
-  const data = { app: 'gnss-scope', format: JSON_FORMAT, exportedAt: new Date().toISOString(), session, point };
-  download(`${safeName(session.label)}.json`, JSON.stringify(data), 'application/json');
+// ---- raw_index.csv（エポック ↔ raw.nmea の行番号） ----
+// 生NMEA を無加工のまま測位結果と紐付けるための索引。
+//
+// エポックの recvAt は「そのエポックの最初のセンテンスを受け取った時刻」（js/nmea.js の _open）、
+// 生行の t は「その行を受け取った時刻」で、どちらも端末時計。よってエポック k の行は
+// [recvAt_k, recvAt_{k+1}) に入る行として区切れる。**保存時にエポック境界そのものは
+// 持っていないため、これは受信時刻からの再構成（近似）**である。
+//   - 先頭のエポックより前に届いた行（記録開始直後の途中から拾った塊）は epoch_no 0
+//   - 最後のエポック以降の行は、最後のエポックに含める（未確定の次エポックと区別できない）
+//   - 行が 0 のエポックがあれば、その区間の生行が落ちている（BLE 欠落・上限打ち切り）
+// 行番号は raw.nmea の 1 起点。
+export function buildRawIndex(samples, rawNmea) {
+  const lines = rawNmea || [];
+  if (!lines.length) return [];
+  const epochs = (samples || []).map((s) => ({ t: s.t, recvAt: s.recvAt ?? s.t }));
+  const rows = [];
+  // 先頭エポックより前の行（どのエポックにも属さない塊）
+  const first = epochs.length ? epochs[0].recvAt : Infinity;
+  let cursor = 0;
+  while (cursor < lines.length && (lines[cursor].t ?? -Infinity) < first) cursor++;
+  if (cursor > 0) rows.push({ epochNo: 0, t: null, recvAt: null, from: 1, to: cursor, lines: cursor });
+
+  for (let k = 0; k < epochs.length; k++) {
+    const next = k + 1 < epochs.length ? epochs[k + 1].recvAt : Infinity;
+    const from = cursor + 1;
+    while (cursor < lines.length && (lines[cursor].t ?? -Infinity) < next) cursor++;
+    const count = cursor + 1 - from;
+    rows.push({
+      epochNo: k + 1,
+      t: epochs[k].t ?? null,
+      recvAt: epochs[k].recvAt ?? null,
+      from: count ? from : null,
+      to: count ? cursor : null,
+      lines: count,
+    });
+  }
+  return rows;
 }
 
-// ---- 調査日バンドル JSON（その日の全地点を1ファイルに） ----
-// point を丸ごと入れるので、生NMEA・生エポック・Android内蔵の測位が地点ごとに揃ったまま出る。
-export function exportSurveyJSON(survey, entries) {
-  const data = {
+export function buildRawIndexCsv(session, point) {
+  const rows = buildRawIndex(point?.samples, point?.rawNmea);
+  if (!rows.length) return null;
+  const lines = ['epoch_no,utc_time,recv_at_ms,recv_at_local,line_from,line_to,lines'];
+  for (const r of rows) {
+    lines.push(csvRow([r.epochNo, isoOrEmpty(r.t), r.recvAt, localStamp(r.recvAt), r.from, r.to, r.lines]));
+  }
+  lines.push(...commentBlock('地点', pointIdentity(session)));
+  lines.push(...commentBlock('索引の作り', [
+    ['note', 'line_from/line_to は raw.nmea の行番号（1起点）'],
+    ['note', 'epoch_no 0 は先頭エポックより前に届いた行'],
+    ['note', 'エポック境界は受信時刻からの再構成（近似）'],
+    ['raw_truncated', session.summary?.rawTruncated || 0],
+  ]));
+  return csvText(lines);
+}
+
+// ---- point.json（地点まるごと。format 1 として単体でも取込できる） ----
+// 生NMEA は raw.nmea として別に出すので含めない（同じデータを二重に持たない）。
+// 含めなかったことは rawNmeaFile で示す。
+export function buildPointJson(session, point, { rawNmeaFile = null } = {}) {
+  const body = { ...point };
+  if (rawNmeaFile) delete body.rawNmea;
+  const data = { app: 'gnss-scope', format: JSON_FORMAT, exportedAt: new Date().toISOString(), session, point: body };
+  if (rawNmeaFile) data.rawNmeaFile = rawNmeaFile;
+  return JSON.stringify(data);
+}
+
+// ---- survey.json（調査日のメタ＋全地点の集計値。実データなし） ----
+// 中身を開かずに「その日に何があるか」を読むためのファイル。
+export function buildSurveyJson(survey, entries, { kind = 'survey' } = {}) {
+  const points = (entries || []).map(({ session, point }) => ({
+    session,
+    // samples / rawNmea / deviceSamples は各地点のファイル側にある
+    point: point ? stripSamples(point) : null,
+  }));
+  return JSON.stringify({
     app: 'gnss-scope',
-    format: BUNDLE_FORMAT,
+    format: 3,
+    kind,
     exportedAt: new Date().toISOString(),
     survey,
-    points: (entries || []).filter((e) => e.point).map(({ session, point }) => ({ session, point })),
-  };
-  download(`${safeName(survey.id)}_bundle.json`, JSON.stringify(data), 'application/json');
+    points,
+  });
 }
 
-// ---- 調査日の対応表 CSV（1行1地点） ----
+function stripSamples(point) {
+  const { samples, rawNmea, deviceSamples, ...rest } = point;
+  return rest;
+}
+
+// ---- compare.csv（調査日の対応表。1行1地点） ----
 // 「20地点まわった結果、地点ごとに GNSS受信機と Android内蔵がどう違ったか」を1枚の表にする。
 // これが2系統比較の入口で、地点の対応は survey_id + point_no で辿る。
 // 列名の接頭辞 gnss_ / dev_ は系統を表す（機種名は入れない）。
@@ -250,23 +360,23 @@ export function compareRow(session, point) {
   ];
 }
 
-export function exportSurveyCompareCSV(survey, entries) {
+export function buildCompareCsv(survey, entries) {
   const rows = (entries || []).map(({ session, point }) => csvRow(compareRow(session, point)));
   const lines = [COMPARE_HEADER.join(','), ...rows];
-  lines.push('');
-  lines.push(`# survey,${csvCell(survey.id)}`);
-  lines.push(`# points,${rows.length}`);
   const gnss = SERIES.gnss.label;
   const dev = SERIES.device.label;
+  lines.push('');
+  lines.push(`# survey,${csvCell(survey?.id ?? '')}`);
+  lines.push(`# points,${rows.length}`);
   lines.push(`# gnss_*: ${gnss} / dev_*: ${dev}`);
   lines.push(`# cover_gnss_pct: ${gnss}の測定区間のうち ${dev} も取れていた割合`);
   lines.push(`# dev_in_record_window: ${dev}のサンプルのうち record→stop の記録区間内にあった点数`);
   lines.push('# clock_offset_ms: 端末時計 − GPS時刻（2系統を同じ時間軸へ並べ直すときの補正量）');
   lines.push(`# dev_fix_lag_ms: ${dev}の 受信時刻 − 測位確定時刻（大きいほど古い fix を返している）`);
-  download(`${safeName(survey.id)}_compare.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  return csvText(lines);
 }
 
-// ---- 取込 ----
+// ---- 取込（JSON） ----
 // 端末を移した記録・他端末で測った記録を、この端末の一覧に並べて解析できるようにする。
 // 取込時は必ず新しい id を採番する（同じファイルを2回読んでも上書きにならない）。
 // 地点番号は取込先の調査日で採り直し、元の番号は sourcePointNo に残す。
@@ -281,14 +391,15 @@ export async function importSessionFile(file, storage) {
 
   const imported = [];
   for (const src of items) {
-    imported.push(await importOne(src, survey, storage));
+    imported.push(await importPointData(src, survey, storage));
   }
   return imported;
 }
 
 // 1地点ぶんの取込。調査日（surveyId）は元データの日付をそのまま使い、
 // 地点番号だけ取込先で採り直す（同じ日の測定は同じ調査日に集まる方が突き合わせやすいため）。
-async function importOne(src, survey, storage) {
+// 出力ZIP の取込（js/package-io.js）も同じ経路を通る。
+export async function importPointData(src, survey, storage) {
   const createdAt = src.session.createdAt || Date.now();
   const surveyId = src.session.surveyId || survey?.id || surveyIdOf(createdAt);
   const pointNo = nextPointNo(await storage.getSessionsBySurvey(surveyId), surveyId);
@@ -325,7 +436,14 @@ async function importOne(src, survey, storage) {
       cep50: stats?.cep50,
       cep95: stats?.cep95,
       rawLines: rawNmea ? rawNmea.length : null,
-      ...(deviceStats ? { deviceDrms: deviceStats.drms, deviceCount: deviceStats.count } : {}),
+      ...(deviceStats
+        ? {
+            deviceDrms: deviceStats.drms,
+            deviceCount: deviceStats.count,
+            deviceOffsetM: deviceStats.offsetFromRef?.distM ?? null,
+            deviceOffsetDeg: deviceStats.offsetFromRef?.bearingDeg ?? null,
+          }
+        : {}),
     },
   };
   // 実データは 1 チャンクとして入れる（読み出し経路を記録と 1 本にするため）。
@@ -335,8 +453,10 @@ async function importOne(src, survey, storage) {
   const data = { samples: src.point.samples };
   if (rawNmea) data.rawNmea = rawNmea;
   if (deviceSamples?.length) data.deviceSamples = deviceSamples;
-  // 端末内サイズは記録と同じ数え方（容量警告に取込ぶんも乗るように）
-  session.summary = { ...session.summary, bytes: JSON.stringify(data).length };
+  // 端末内サイズは記録と同じ数え方（容量警告に取込ぶんも乗るように）。
+  // 写真は「この端末で付け直す」ものなので枚数・バイト数は 0 から数える
+  // （元データの枚数をそのまま持ち込むと、写真が無いのに📷が付いてしまう）。
+  session.summary = { ...session.summary, bytes: JSON.stringify(data).length, photoCount: 0, photoBytes: 0 };
 
   await storage.putImported(session, point, data);
   return { session, point: { ...point, ...data } };
@@ -355,7 +475,7 @@ function validate(data) {
   return { survey: null, items: [validateEntry(data, '')] };
 }
 
-function validateEntry(entry, where) {
+export function validateEntry(entry, where) {
   const at = where ? `${where}: ` : '';
   if (!entry || typeof entry !== 'object') throw new Error(`${at}地点データの形式が不正です`);
   const { session, point } = entry;

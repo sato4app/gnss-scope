@@ -2,7 +2,7 @@
 // データフロー: 受信経路(BLE/モック) → LineBuffer → parseSentence → EpochAssembler
 //             → (記録 / 解析 / 地図) ※再描画は rAF でスロットリング
 // 行・エポックは StreamStats（受信品質統計）にも分岐する。$PPICO は統計のみ。
-// 画面は「接続 / 記録 / 解析 / 地図 / 設定」のタブ切替。各タブの DOM 操作は *-ui.js 側。
+// 画面は「接続 / 記録 / 一覧 / 解析 / 地図 / 設定」のタブ切替。各タブの DOM 操作は *-ui.js 側。
 import { $, initTabUI, fixBadge } from './view-utils.js';
 import { LineBuffer, parseSentence, EpochAssembler } from './nmea.js';
 import { StreamStats } from './stream-stats.js';
@@ -13,6 +13,8 @@ import { DeviceGnss } from './device-gnss.js';
 import { MapView, initMapUI, TileCache, initTileUI } from './map.js';
 import { initConnectUI } from './connect-ui.js';
 import { initRecordUI } from './record-ui.js';
+import { initListUI } from './list-ui.js';
+import { initPhotoUI } from './photo-ui.js';
 import { initAnalysisUI } from './analysis-ui.js';
 import { initSettingsUI } from './settings-ui.js';
 import { DEFAULT_SETTINGS } from './constants.js';
@@ -109,11 +111,24 @@ async function main() {
   }
 
   // ---- 各タブの配線 ----
+  // 一覧タブを先に作り、記録タブへ渡す（保存＝確定と、その後の一覧更新が一覧側にあるため）。
+  // 一覧から未確定の記録が消えたときだけ記録タブへ戻す必要があるので、そこは遅延参照にする。
+  const photos = initPhotoUI({ storage, settings });
+  const listUI = initListUI({
+    storage,
+    recorder,
+    photos,
+    onLoad: setLoaded,
+    getLoadedId: () => loaded?.session?.id ?? null,
+    getPendingId: () => recordUI?.pendingId ?? null,
+    onPendingGone: () => recordUI?.clearPending(),
+  });
   recordUI = initRecordUI({
     recorder,
     storage,
     settings,
-    onLoad: setLoaded,
+    photos,
+    list: listUI,
     getLoadedId: () => loaded?.session?.id ?? null,
   });
   analysisUI = initAnalysisUI({ settings, getLatestEpoch: () => latestEpoch });
@@ -146,9 +161,13 @@ async function main() {
       if (page === 'map') mapUI.onShow();
       else if (page === 'analysis') analysisUI.refresh();
       else if (page === 'record') recordUI.onShow();
-      else if (page === 'settings') {
+      else if (page === 'list') {
+        // 開くたびに読み直す（別タブでの記録・削除の後でも最新の一覧になる）
+        listUI.refresh();
+        listUI.refreshStorageWarning();
+      } else if (page === 'settings') {
         settingsUI.refreshVersion(); // 開くたびにバージョンを確認
-        recordUI.refreshStorageWarning(); // 端末内のデータ量も開くたびに数え直す
+        listUI.refreshStorageWarning(); // 端末内のデータ量も開くたびに数え直す
       }
     },
   });

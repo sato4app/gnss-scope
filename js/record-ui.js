@@ -4,8 +4,9 @@
 //   save:   地点名・メモを付けて確定 → そのまま読込データにする
 // 収集中のライブ表示・進捗バー・散布図・凡例もこのモジュールが持つ。
 // 記録中の画面維持（Wake Lock）は記録の一部なのでここに含める（仕様 3-7）。
-// 保存済みの記録の一覧・編集・エクスポートは session-list-ui.js、
-// 写真の取り込みは photo-ui.js が担当する。
+// 保存済みの記録の一覧・編集・出力は「一覧」タブ（list-ui.js）、
+// 写真の取り込みは photo-ui.js が担当する。どちらも app.js で作って渡す
+// （一覧は独立したタブになったので、記録タブがその生成を抱えない）。
 //
 // 画面に出す情報は重複させない（仕様 7）。同じ値の置き場所は1か所だけ:
 //   点数・DRMS      → 散布図の下の凡例（renderLegend）
@@ -21,13 +22,12 @@ import { ScatterPlotView } from './charts.js';
 import { deviceStatusText } from './device-gnss.js';
 import { Beeper, beepFor } from './beep.js';
 import { SERIES } from './constants.js';
-import { initPhotoUI } from './photo-ui.js';
-import { initSessionListUI } from './session-list-ui.js';
 
 // 収束判定の窓 [秒]（recorder.js の CONVERGENCE.holdSec と揃える。副バーの分母）
 const HOLD_SEC = 10;
 
-export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId }) {
+// photos: 写真パネル（photo-ui.js） / list: 一覧タブ（list-ui.js）
+export function initRecordUI({ recorder, storage, settings, photos, list, getLoadedId }) {
   const scatterView = new ScatterPlotView($('rec-scatter'));
   const beeper = new Beeper(() => settings.beep);
   const wakeLock = new WakeLockManager((msg) => {
@@ -36,17 +36,6 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
   let pending = null; // 停止直後の下書き（DB には書けている）
   let latestEpoch = null; // 進捗バー脇の品質表示（衛星数・HDOP）用
   let prevStableSec = 0; // 安定カウントが 0 に戻ったことを見せるため直前値を持つ
-
-  const photos = initPhotoUI({ storage, settings });
-  const list = initSessionListUI({
-    storage,
-    recorder,
-    photos,
-    onLoad,
-    getLoadedId,
-    getPendingId: () => pending?.sessionId ?? null,
-    onPendingGone: () => clearPending(),
-  });
 
   function setRecordingUi(on) {
     $('btn-record').disabled = on;
@@ -387,7 +376,11 @@ export function initRecordUI({ recorder, storage, settings, onLoad, getLoadedId 
     onRecordUpdate,
     onRecordStop,
     onWriteError,
-    refreshStorageWarning: list.refreshStorageWarning,
+    // 停止直後の未確定な記録。一覧タブから削除されたときに手放せるようにする
+    get pendingId() {
+      return pending?.sessionId ?? null;
+    },
+    clearPending,
     // 写真の上限枚数を 0 にすると写真UIごと消える。設定タブから変えられるので、
     // 保存フォームと一覧の編集フォーム（refresh で作り直す）に反映し直す。
     refreshPhotoUi: async () => {

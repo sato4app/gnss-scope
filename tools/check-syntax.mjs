@@ -828,5 +828,184 @@ try {
 }
 assert(importError?.includes('0 件'), '取込: 生エポック0件は理由付きで弾く');
 
+// ---- 一覧タブの表示テキスト（js/view-utils.js） ----
+// 行に出す値は session.summary だけで作れること（実データを結合しない）が要件。
+const { pointSummaryText, pointDataText, lossWarnText, surveyDateText, surveySpanText, surveyDataText } =
+  await import(pathToFileURL(resolve(jsDir, 'view-utils.js')).href);
+
+const listT0 = new Date(2026, 7, 8, 9, 24, 0).getTime();
+const listSession = {
+  createdAt: listT0,
+  endedAt: listT0 + 92000,
+  summary: {
+    count: 92, drms: 0.78, lat: 34.85367, lon: 135.47204, rawLines: 1104, stopReason: 'converged',
+    deviceCount: 6, deviceDrms: 4.2, deviceOffsetM: 3.1, deviceOffsetDeg: 45,
+    rxStats: { epochGaps: 0, csNg: 0, bleLossEst: 0 },
+  },
+  window: {
+    startedAt: listT0, endedAt: listT0 + 92000, durationSec: 92,
+    gnss: { startedAt: listT0, endedAt: listT0 + 92000, durationSec: 92, count: 92 },
+    overlap: { overlapSec: 88, deviceInRecording: 6, deviceTotal: 7 },
+  },
+};
+const listLine2 = pointSummaryText(listSession);
+assert(listLine2.includes('09:24:00–09:25:32（92秒）'), '一覧: 2行目は測定区間');
+assert(listLine2.includes('収束で自動停止'), '一覧: 2行目に停止理由を出す');
+assert(listLine2.includes(`${SERIES.gnss.label} 92点 DRMS 0.78m`), '一覧: 2行目に受信機のばらつき');
+assert(listLine2.includes('ズレ 3.1m 北東'), '一覧: 2行目に2系統の中心のズレ（距離と方位）');
+assert(
+  pointSummaryText({ createdAt: listT0, summary: { count: 5 } }).includes(`${SERIES.device.label} なし`),
+  '一覧: Android内蔵が無ければ「なし」と書く'
+);
+const listLine3 = pointDataText(listSession, 210 * 1024);
+assert(listLine3.includes('(34.85367, 135.47204)'), '一覧: 3行目に中心座標');
+assert(listLine3.includes('NMEA 92エポック / 1,104行'), '一覧: 3行目は NMEA のエポック数と行数');
+assert(listLine3.includes('重なり 88秒（区間内 6/7点）'), '一覧: 3行目に区間の重なり');
+assert(listLine3.includes('約 210 KB'), '一覧: 3行目に地点のデータ量');
+assert(
+  pointDataText({ summary: { count: 50 } }).includes('NMEA 50エポック（生行は未保存）'),
+  '一覧: 生NMEA 未保存でもエポック数は出す'
+);
+assert(lossWarnText(listSession) === null, '一覧: 取りこぼしが無ければ警告は出さない');
+assert(
+  lossWarnText({ ...listSession, summary: { ...listSession.summary, count: 60 } }).includes('取得率 65%'),
+  '一覧: 秒数に対して点数が足りなければ取得率を警告する'
+);
+assert(
+  lossWarnText({ ...listSession, summary: { ...listSession.summary, rawTruncated: 20 } }).includes('生NMEA 20行未保存'),
+  '一覧: 生NMEA の上限打ち切りを警告する'
+);
+assert(surveyDateText('2026-08-08') === '2026-08-08（土）', '一覧: 調査日に曜日を添える');
+assert(surveyDateText('') === '', '一覧: 調査日IDが無ければ空');
+
+const listSum = surveySummary([
+  { createdAt: 100, endedAt: 200, summary: { count: 10, rawLines: 100, photoCount: 2, drms: 1 } },
+  { createdAt: 300, endedAt: 400, summary: { count: 20, drms: 3 } },
+]);
+assert(listSum.epochs === 30 && listSum.rawLines === 100 && listSum.rawPoints === 1, '調査日集計: NMEAの量と保存地点数');
+assert(listSum.photos === 2 && listSum.startedAt === 100 && listSum.endedAt === 400, '調査日集計: 写真枚数と時間帯');
+assert(surveySpanText(listSum).includes('–'), '調査日ヘッダ: 測っていた時間帯');
+assert(surveyDataText(listSum) === 'NMEA 1/2地点に保存　30エポック / 100行', '調査日ヘッダ: その日に残っているもの');
+
+// ---- ZIP（出力ファイルの容れ物。js/zip.js） ----
+const { zipEncode, zipDecode, zipText, crc32 } = await import(pathToFileURL(resolve(jsDir, 'zip.js')).href);
+assert(crc32(new TextEncoder().encode('123456789')) === 0xcbf43926, 'ZIP: CRC-32 の基準値');
+const zipped = await zipDecode(
+  await zipEncode([
+    { name: 'points/p01_地点名/raw.nmea', data: `${ggaLine}\r\n` },
+    { name: 'bin.dat', data: new Uint8Array([0, 1, 2, 255]) },
+  ])
+);
+assert(zipText(zipped, 'points/p01_地点名/raw.nmea') === `${ggaLine}\r\n`, 'ZIP: UTF-8のパスと本文が往復する');
+assert(zipped.get('bin.dat').length === 4 && zipped.get('bin.dat')[3] === 255, 'ZIP: バイト列が往復する');
+const zipStored = await zipDecode(await zipEncode([{ name: 'x.txt', data: 'y'.repeat(200) }], { compress: false }));
+assert(zipText(zipStored, 'x.txt').length === 200, 'ZIP: 無圧縮（store）でも往復する');
+
+// ---- 生NMEA ↔ エポックの索引（js/file-io.js） ----
+// 生NMEA を無加工のまま測位結果と紐付けるための再構成。境界は受信時刻で決める。
+const { buildRawIndex } = await import(pathToFileURL(resolve(jsDir, 'file-io.js')).href);
+const rawIdx = buildRawIndex(
+  [{ t: 1000, recvAt: 5000 }, { t: 2000, recvAt: 6000 }],
+  [
+    { t: 4900, line: 'pre' },
+    { t: 5000, line: 'a1' }, { t: 5100, line: 'a2' },
+    { t: 6000, line: 'b1' }, { t: 6200, line: 'b2' },
+  ]
+);
+assert(rawIdx[0].epochNo === 0 && rawIdx[0].from === 1 && rawIdx[0].to === 1, '索引: 先頭エポックより前の行は epoch_no 0');
+assert(rawIdx[1].from === 2 && rawIdx[1].to === 3 && rawIdx[1].lines === 2, '索引: エポックの行は次のエポックの手前まで');
+assert(rawIdx[2].from === 4 && rawIdx[2].to === 5, '索引: 最後のエポックは末尾までを含む');
+assert(buildRawIndex([{ recvAt: 1 }], []).length === 0, '索引: 生NMEAが無ければ空');
+const rawGap = buildRawIndex(
+  [{ recvAt: 10 }, { recvAt: 20 }, { recvAt: 30 }],
+  [{ t: 10, line: 'x' }, { t: 30, line: 'y' }]
+);
+assert(rawGap[1].lines === 0 && rawGap[1].from === null, '索引: 生行が落ちたエポックも 0 行として残す');
+
+// ---- 出力ZIP の往復（js/package-io.js） ----
+// 出力 → 取込で、生NMEA・Android内蔵・写真・地点の対応が戻ること。
+const { buildPackage, importPackageFile, parseRawNmea } = await import(
+  pathToFileURL(resolve(jsDir, 'package-io.js')).href
+);
+const rmcLine = cs('GNRMC,010000.00,A,3451.2200,N,13528.3225,E,0.0,0.0,080726,,,A');
+const pkgStore = makeFakeStorage();
+const pkgRec = new Recorder(pkgStore, { deviceGnss: fakeDevice });
+await tick();
+await pkgRec.start({ maxSec: 0, maxEpochs: 0, autoStop: false, minSec: 0, withDevice: true });
+const pkgDraftId = pkgRec.currentId;
+pkgRec.addRawLine(ggaLine); // 先頭エポックより前に届いた行
+const pkgT0 = Date.now();
+pkgRec.addDeviceSample({ t: pkgT0, recvAt: pkgT0, lat: 34.8536, lon: 135.472, accuracy: 4 });
+await tick(); // 生行とエポックの受信時刻を確実にずらす（索引の境界を確かめるため）
+for (let i = 0; i < 3; i++) pkgRec.addEpoch(mkEpoch(i));
+pkgRec.addRawLine(rmcLine); // エポック確定後に届いた行（最後のエポックに属する）
+pkgRec.stop('manual');
+await pkgRec.settled();
+const pkgEntry = await confirmDraft(pkgStore, pkgDraftId, '出力テスト', 'メモ');
+await pkgStore.addPhoto(pkgDraftId, { blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/jpeg' }), w: 640, h: 480 });
+
+const pkgSurvey = await pkgStore.getSurvey(pkgEntry.session.surveyId);
+const pkg = await buildPackage({
+  storage: pkgStore,
+  survey: pkgSurvey,
+  sessions: await pkgStore.getSessionsBySurvey(pkgSurvey.id),
+  kind: 'survey',
+});
+assert(pkg.filename === `gnss-scope_${pkgSurvey.id}.zip`, '出力: ファイル名は調査日');
+const pkgFiles = await zipDecode(pkg.blob);
+const pkgDir = 'points/p01_出力テスト';
+assert(
+  pkgFiles.has('manifest.json') && pkgFiles.has('survey.json') && pkgFiles.has('compare.csv'),
+  '出力: 索引・調査日メタ・対応表を同梱する'
+);
+assert(
+  zipText(pkgFiles, `${pkgDir}/raw.nmea`) === `${ggaLine}\r\n${rmcLine}\r\n`,
+  '出力: raw.nmea は無加工（コメント行を入れない）'
+);
+const pkgPointJson = zipText(pkgFiles, `${pkgDir}/point.json`);
+assert(!pkgPointJson.includes('"rawNmea":'), '出力: 生NMEA を point.json と二重に持たない');
+assert(pkgPointJson.includes('"rawNmeaFile":"raw.nmea"'), '出力: 生NMEA の置き場所を point.json に書く');
+assert(zipText(pkgFiles, `${pkgDir}/epochs.csv`).includes('time_utc'), '出力: エポックCSVを入れる');
+assert(zipText(pkgFiles, `${pkgDir}/device.csv`).includes('accuracy_m'), '出力: Android内蔵のCSVを入れる');
+assert(pkgFiles.has(`${pkgDir}/photos/ph1.jpg`), '出力: 写真を同梱する');
+const pkgManifest = JSON.parse(zipText(pkgFiles, 'manifest.json'));
+assert(pkgManifest.format === 3 && pkgManifest.kind === 'survey', '出力: manifest は format 3');
+assert(pkgManifest.points.length === 1 && pkgManifest.points[0].dir === pkgDir, '出力: manifest から地点のフォルダを辿れる');
+assert(pkgManifest.points[0].files.raw === 'raw.nmea' && pkgManifest.points[0].rawLines === 2, '出力: 地点ごとのファイルと件数');
+assert(pkgManifest.counts.epochs === 3 && pkgManifest.counts.photos === 1, '出力: 合計件数を索引に持つ');
+assert(zipText(pkgFiles, `${pkgDir}/raw_index.csv`).split('\r\n')[1].startsWith('0,'), '出力: 索引の先頭は epoch_no 0');
+
+const pkgNoPhoto = await buildPackage({
+  storage: pkgStore,
+  survey: pkgSurvey,
+  sessions: await pkgStore.getSessionsBySurvey(pkgSurvey.id),
+  kind: 'point',
+  includePhotos: false,
+});
+assert(pkgNoPhoto.counts.photos === 0, '出力: 写真を含めない指定ができる');
+assert(pkgNoPhoto.filename === 'gnss-scope_出力テスト.zip', '出力: 地点ごとのファイル名は地点名');
+
+const restoreStore = makeFakeStorage();
+const restored = await importPackageFile(pkg.blob, restoreStore);
+assert(restored.length === 1 && restored[0].session.status === 'confirmed', '取込: ZIP の地点は確定済みで入る');
+assert(restored[0].point.samples.length === 3, '取込: 生エポックを復元する');
+assert(restored[0].point.rawNmea.length === 2, '取込: 生NMEA を復元する');
+assert(restored[0].point.rawNmea[0].line === ggaLine, '取込: 生行は無加工のまま戻る');
+assert(restored[0].point.rawNmea[0].t === null, '取込: どのエポックにも属さない行は受信時刻を持たない');
+assert(restored[0].point.rawNmea[1].t != null, '取込: 行の受信時刻は索引から復元する（エポック単位）');
+assert(restored[0].point.deviceSamples.length === 1, '取込: Android内蔵のサンプルも戻る');
+assert(restored[0].session.sourcePointNo === 1 && restored[0].session.pointNo === 1, '取込: 地点番号は取込先で採り直す');
+assert((await restoreStore.getPhotos(restored[0].session.id)).length === 1, '取込: 写真も復元する');
+assert(restored[0].session.summary.photoCount === 1, '取込: 写真の枚数を数え直す（元データの枚数を持ち込まない）');
+assert(parseRawNmea('a\r\nb\r\n', null).length === 2, '取込: 索引が無くても生行は復元できる');
+
+let pkgError = null;
+try {
+  await importPackageFile(await zipEncode([{ name: 'a.txt', data: 'x' }]), restoreStore);
+} catch (e) {
+  pkgError = e.message;
+}
+assert(pkgError?.includes('manifest.json'), '取込: GNSS Scope の ZIP でなければ理由付きで弾く');
+
 console.log(failed ? `\n${failed} 件失敗` : '\n全チェック OK');
 process.exit(failed ? 1 : 0);

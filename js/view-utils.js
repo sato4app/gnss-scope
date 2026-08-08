@@ -285,27 +285,89 @@ export function draftHeadText(session) {
   return session.summary?.stopReason ? `${time} 停止` : `${time} まで（記録中に中断）`;
 }
 
-// 記録一覧の副見出しテキスト
-export function sessionSubText(session) {
-  const when = new Date(session.createdAt).toLocaleString('ja-JP');
-  const s = session.summary;
-  return (
-    `${when}　${s?.count ?? 0}点` +
-    (s?.drms != null ? `　DRMS ${s.drms.toFixed(2)}m` : '') +
-    (s?.deviceDrms != null ? `（${DEVICE} ${s.deviceDrms.toFixed(2)}m）` : '') +
-    (s?.lat != null ? `　(${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})` : '')
-  );
+// ---- 一覧タブの表示（調査日ヘッダ ＋ 地点行の2〜3行目） ----
+// 行に詰め込みすぎないよう、役割で3行に分ける:
+//   1行目 地点番号・種別・地点名・写真・取りこぼしの警告（list-ui.js が組み立てる）
+//   2行目 pointSummaryText  測ったときのこと（区間・停止理由・2系統のばらつき）
+//   3行目 pointDataText     残っているもの（座標・NMEA・区間の重なり・容量）
+
+// 桁区切り（生NMEA の行数は万を超えるため）
+const n0 = (v) => (v == null ? '—' : v.toLocaleString('ja-JP'));
+
+// 停止理由の表示ラベル（無い旧データは空文字）
+export const stopReasonLabel = (reason) => STOP_LABEL[reason] || '';
+
+// 地点行 2行目：測定区間・停止理由・2系統のばらつき（中心のズレまで）
+export function pointSummaryText(session) {
+  const s = session.summary || {};
+  const w = session.window;
+  const span = w
+    ? `${localTime(w.startedAt)}–${localTime(w.endedAt)}（${Math.round(w.durationSec || 0)}秒）`
+    : new Date(session.createdAt).toLocaleString('ja-JP');
+  const gnss = `${GNSS} ${s.count ?? 0}点` + (s.drms != null ? ` DRMS ${s.drms.toFixed(2)}m` : '');
+  // 中心のズレは deviceOffsetM を持つ記録（このバージョン以降）だけに出す
+  const offset =
+    s.deviceOffsetM != null ? `（ズレ ${s.deviceOffsetM.toFixed(1)}m ${bearingText(s.deviceOffsetDeg)}）` : '';
+  const device = s.deviceCount
+    ? `${DEVICE} ${s.deviceCount}点` + (s.deviceDrms != null ? ` DRMS ${s.deviceDrms.toFixed(2)}m` : '') + offset
+    : `${DEVICE} なし`;
+  return [span, stopReasonLabel(s.stopReason), gnss, device].filter(Boolean).join('　');
 }
 
-// 記録一覧の2行目：2系統が揃っているかと生NMEAの有無（対応の確認をひと目で）
-export function pairingSubText(session) {
-  const s = session.summary;
-  const w = session.window;
-  const parts = [`${GNSS} ${s?.count ?? 0}点`];
-  parts.push(s?.rawLines != null ? `生NMEA ${s.rawLines}行` : '生NMEAなし');
-  parts.push(`${DEVICE} ${s?.deviceCount ?? 0}点`);
-  if (w?.overlap?.deviceTotal != null) {
-    parts.push(`区間内 ${w.overlap.deviceInRecording}/${w.overlap.deviceTotal}点`);
+// 地点行 3行目：中心座標・NMEA の量・2系統の区間の重なり・端末内のデータ量。
+// bytes は呼び出し側（storage.js の sessionBytes）で数えたもの。
+export function pointDataText(session, bytes = null) {
+  const s = session.summary || {};
+  const parts = [];
+  if (s.lat != null) parts.push(`(${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`);
+  // NMEA のエポック数はパース済み測位結果の点数と同じ（エポックは NMEA から組み立てている）。
+  // 生行を保存していない記録でもエポック数は出せるので、保存の有無は行数で示す。
+  parts.push(`NMEA ${n0(s.count ?? 0)}エポック` + (s.rawLines != null ? ` / ${n0(s.rawLines)}行` : '（生行は未保存）'));
+  const ov = session.window?.overlap;
+  if (ov) {
+    parts.push(
+      `重なり ${Math.round(ov.overlapSec)}秒` +
+        (ov.deviceTotal != null ? `（区間内 ${ov.deviceInRecording}/${ov.deviceTotal}点）` : '')
+    );
   }
-  return parts.join(' / ');
+  if (bytes) parts.push(`約 ${formatBytes(bytes)}`);
+  return parts.join('　');
+}
+
+// 取りこぼしの警告（無ければ null）。再測が要る地点を一覧から拾えるようにする。
+// 「1Hz なら秒数と点数はほぼ一致するはず」という前提で取得率も見る。
+export function lossWarnText(session) {
+  const s = session.summary || {};
+  const rx = s.rxStats;
+  const parts = [];
+  const sec = session.window?.gnss?.durationSec;
+  const count = s.count ?? 0;
+  if (sec >= 10 && count > 0 && count < sec * 0.9) parts.push(`取得率 ${Math.round((count / sec) * 100)}%`);
+  if (s.rawTruncated) parts.push(`生NMEA ${n0(s.rawTruncated)}行未保存`);
+  if (rx?.epochGaps) parts.push(`エポック欠落 ${rx.epochGaps}`);
+  if (rx?.bleLossEst) parts.push(`BLE欠落(推定) ${n0(rx.bleLossEst)}行`);
+  if (rx?.csNg) parts.push(`CS NG ${n0(rx.csNg)}行`);
+  return parts.length ? parts.join(' / ') : null;
+}
+
+// 調査日ID 'yyyy-mm-dd' → '2026-08-08（金）'。曜日は現場の記憶と結び付く手掛かりになる。
+// 文字列から組み立てる（Date('yyyy-mm-dd') は UTC 解釈なので、そのままでは曜日がずれる）。
+const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+export function surveyDateText(surveyId) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(surveyId || '');
+  if (!m) return surveyId || '';
+  return `${surveyId}（${WEEKDAYS[new Date(+m[1], +m[2] - 1, +m[3]).getDay()]}）`;
+}
+
+// 調査日ヘッダ：その日に測っていた時間帯（最初の記録開始〜最後の記録終了）
+export function surveySpanText(sum) {
+  if (!sum?.startedAt) return '';
+  return `${localTime(sum.startedAt)}–${localTime(sum.endedAt)}`;
+}
+
+// 調査日ヘッダ：その日に何が残っているか（生NMEA を持つ地点数・合計エポック・合計行数）
+export function surveyDataText(sum) {
+  if (!sum?.points) return '';
+  const raw = sum.rawPoints ? `NMEA ${sum.rawPoints}/${sum.points}地点に保存` : 'NMEA 生行なし';
+  return `${raw}　${n0(sum.epochs)}エポック / ${n0(sum.rawLines)}行`;
 }

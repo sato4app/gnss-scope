@@ -111,8 +111,16 @@ export function buildSummary({ stats, deviceStats, stopReason, autoStop, rxStats
     drms: stats.drms,
     cep50: stats.cep50,
     cep95: stats.cep95,
-    // 一覧で GNSS受信機 と並べて見せるための比較値
-    ...(deviceStats ? { deviceDrms: deviceStats.drms, deviceCount: deviceStats.count } : {}),
+    // 一覧で GNSS受信機 と並べて見せるための比較値。
+    // 中心のズレも入れるのは、一覧タブが実データ（point）を読まずに行を描くため。
+    ...(deviceStats
+      ? {
+          deviceDrms: deviceStats.drms,
+          deviceCount: deviceStats.count,
+          deviceOffsetM: deviceStats.offsetFromRef?.distM ?? null,
+          deviceOffsetDeg: deviceStats.offsetFromRef?.bearingDeg ?? null,
+        }
+      : {}),
   };
 }
 

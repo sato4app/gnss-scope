@@ -64,7 +64,6 @@
         <button id="btn-discard" class="btn danger" disabled>🗑 破棄</button>
       </div>
       <div id="rec-write-error" class="note-error" hidden></div>
-      <div id="storage-warn" class="note-warn" hidden></div>
 
       <!-- 収束の進捗（記録中のみ）。主バー=経過/上限、副バー=収束判定の2フェーズ -->
       <div id="rec-progress" class="rec-progress" hidden>
@@ -132,17 +131,25 @@
         <div id="photo-strip" class="photo-strip"></div>
       </div>
       <input id="file-photo" type="file" accept="image/*" capture="environment" multiple hidden>
-
-      <div class="sub-head">記録一覧（調査日 → 地点）</div>
-      <div class="conn-bar">
-        <button id="btn-import" class="btn">📂 JSON取込</button>
-        <input id="file-import" type="file" accept="application/json,.json" hidden>
-      </div>
-      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の GNSS受信機と Android内蔵の測位は同じレコードに入るため対応が崩れません。調査日の「対応表CSV」で 1行1地点の比較表を出せます。「下書き」は停止しただけでまだ地点になっていない記録で、地点番号・集計・エクスポートの対象外です。保存すると地点になります。</div>
-      <ul id="session-list" class="session-list"></ul>
+      <div class="note-dim">停止して「保存」すると地点になります（保存前は「下書き」）。保存した記録は「一覧」タブで確認・出力します。</div>
     </section>
 
-    <!-- 3. 解析 -->
+    <!-- 3. 一覧 -->
+    <!-- 端末内に残っている測位データを日ごとに並べ、ここから持ち出す。
+         記録タブが「測る画面」、この画面が「持ち出して片付ける画面」。 -->
+    <section class="page" id="page-list">
+      <div id="storage-warn" class="note-warn" hidden></div>
+      <div class="conn-bar">
+        <button id="btn-import" class="btn">📂 読込</button>
+        <input id="file-import" type="file" accept="application/json,.json,application/zip,.zip" hidden>
+        <label class="note-inline"><input id="list-export-photos" type="checkbox" checked>出力に写真を含める</label>
+      </div>
+      <div id="list-status" class="tile-status" hidden></div>
+      <ul id="session-list" class="session-list"></ul>
+      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の GNSS受信機と Android内蔵の測位は同じレコードに入るため対応が崩れません。「📦 出力」はその調査日（または地点）を ZIP 1ファイルにまとめます（対応表CSV・エポックCSV・GPX・生NMEA・写真を同梱）。出力した ZIP と JSON は「📂 読込」で戻せます。「下書き」は停止しただけでまだ地点になっていない記録で、地点番号・集計・出力の対象外です。</div>
+    </section>
+
+    <!-- 4. 解析 -->
     <section class="page" id="page-analysis">
       <div class="src-switch">
         <label><input type="radio" name="ansrc" value="live" checked>ライブ</label>
@@ -196,7 +203,7 @@
       </dl>
     </section>
 
-    <!-- 4. 地図 -->
+    <!-- 5. 地図 -->
     <section class="page" id="page-map">
       <div id="map"></div>
       <div id="map-ctrl">
@@ -206,7 +213,7 @@
       </div>
     </section>
 
-    <!-- 5. 設定 -->
+    <!-- 6. 設定 -->
     <section class="page" id="page-settings">
       <div class="sub-head">測位・記録</div>
       <label class="set-row">UERE（HDOP×UERE 概算用）[m]
@@ -249,7 +256,7 @@
 
       <div class="sub-head">端末内のデータ量</div>
       <div id="storage-status" class="tile-status">—</div>
-      <div class="note-dim">記録データと写真の概算です（地図タイルは含みません）。50MB を超えると記録タブに警告が出ます。WiFi のある場所で調査日ごとに「📦 バンドルJSON」を書き出し、不要になった調査日を削除してください。</div>
+      <div class="note-dim">記録データと写真の概算です（地図タイルは含みません）。50MB を超えると一覧タブに警告が出ます。WiFi のある場所で調査日ごとに「📦 出力」を書き出し、不要になった調査日を削除してください。</div>
 
       <div class="sub-head">地図</div>
       <div class="set-row">地図種別
@@ -295,6 +302,7 @@
   <nav id="tabbar">
     <button class="tab" data-page="connect">接続</button>
     <button class="tab" data-page="record">記録</button>
+    <button class="tab" data-page="list">一覧</button>
     <button class="tab" data-page="analysis">解析</button>
     <button class="tab" data-page="map">地図</button>
     <button class="tab" data-page="settings">設定</button>

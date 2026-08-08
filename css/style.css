@@ -166,6 +166,8 @@ body {
 }
 .note-dim { color: var(--muted); font-size: 12px; margin-top: 12px; }
 .note-inline { color: var(--muted); font-size: 11px; margin-left: auto; }
+/* 一覧タブの「出力に写真を含める」など、注記の中に置くチェックボックス */
+label.note-inline { display: flex; align-items: center; gap: 4px; }
 /* 記録中の追記に失敗したときの警告（黙って握り潰さないための表示） */
 .note-error {
   background: #2f1414;
@@ -366,6 +368,11 @@ body {
 .session-list .draft-form { margin-top: 8px; }
 .session-list .draft-form .btn { flex: 0 0 auto; }
 .session-list .s-photos { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
+/* 取りこぼしの警告（取得率・欠落）。内訳は title 属性に入れる */
+.session-list .s-warn { font-size: 12px; color: var(--warn); flex: 0 0 auto; cursor: help; }
+/* 「詳細」で開く測位結果の全文 */
+.session-list .detail-box { margin-top: 8px; }
+.session-list .detail-box[hidden] { display: none; }
 .session-list .sv-exported {
   font-size: 11px;
   padding: 1px 8px;

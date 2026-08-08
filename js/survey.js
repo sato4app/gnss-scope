@@ -178,30 +178,54 @@ export function groupBySurvey(sessions) {
     }));
 }
 
-// 調査日グループの集計（一覧のヘッダ表示用）。
-// 「20地点まわって2系統とも揃ったのは何地点か」が一目で分かるようにする。
+// 調査日グループの集計（一覧タブのヘッダ表示用）。
+// 「20地点まわって2系統とも揃ったのは何地点か」「その日に何が残っているか」を
+// 地点を1件ずつ開かずに掴めるようにする。実データは読まない（session.summary だけで数える）。
 export function surveySummary(sessions) {
   const counts = { both: 0, gnssOnly: 0, deviceOnly: 0, none: 0 };
   let drmsSum = 0;
   let drmsN = 0;
   let deviceDrmsSum = 0;
   let deviceDrmsN = 0;
+  let epochs = 0;
+  let rawLines = 0;
+  let rawPoints = 0; // 生NMEA を持っている地点数
+  let photos = 0;
+  let startedAt = null;
+  let endedAt = null;
   for (const s of sessions || []) {
-    counts[pairingOf(s.summary)]++;
-    if (s.summary?.drms != null) {
-      drmsSum += s.summary.drms;
+    const sum = s.summary || {};
+    counts[pairingOf(sum)]++;
+    if (sum.drms != null) {
+      drmsSum += sum.drms;
       drmsN++;
     }
-    if (s.summary?.deviceDrms != null) {
-      deviceDrmsSum += s.summary.deviceDrms;
+    if (sum.deviceDrms != null) {
+      deviceDrmsSum += sum.deviceDrms;
       deviceDrmsN++;
     }
+    epochs += sum.count || 0;
+    if (sum.rawLines) {
+      rawLines += sum.rawLines;
+      rawPoints++;
+    }
+    photos += sum.photoCount || 0;
+    // 測っていた時間帯（記録の開始〜終了。端末時計）
+    if (s.createdAt != null) startedAt = startedAt == null ? s.createdAt : Math.min(startedAt, s.createdAt);
+    const last = s.endedAt ?? s.createdAt;
+    if (last != null) endedAt = endedAt == null ? last : Math.max(endedAt, last);
   }
   return {
     points: (sessions || []).length,
     ...counts,
     avgDrms: drmsN ? drmsSum / drmsN : null,
     avgDeviceDrms: deviceDrmsN ? deviceDrmsSum / deviceDrmsN : null,
+    epochs,
+    rawLines,
+    rawPoints,
+    photos,
+    startedAt,
+    endedAt,
   };
 }
 

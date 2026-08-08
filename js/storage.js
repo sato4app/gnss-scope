@@ -165,19 +165,45 @@ export class Storage {
     return this._patchSurvey(surveyId, () => ({ exportedAt: Date.now() }));
   }
 
-  // 端末内に貯まっている量 [バイト]。sessions だけで足りるので全件読んでも軽い。
-  // 実際の IndexedDB 使用量ではなく、書き込むときに数えた概算値の合計。
+  // 端末内に貯まっている量 [バイト] と件数。sessions だけで足りるので全件読んでも軽い。
+  // 量は実際の IndexedDB 使用量ではなく、書き込むときに数えた概算値の合計。
+  // 件数を併せて返すのは、全消去の確認で「何を失うか」を示すため。
   async getStorageUsage() {
     const sessions = await this.getSessions();
-    const surveys = new Map((await this.getSurveys()).map((s) => [s.id, s]));
+    const surveyList = await this.getSurveys();
+    const surveys = new Map(surveyList.map((s) => [s.id, s]));
     let total = 0;
     let unexported = 0;
+    let points = 0;
+    let drafts = 0;
     for (const s of sessions) {
       const bytes = sessionBytes(s);
       total += bytes;
+      if (isConfirmed(s)) points++;
+      else drafts++;
       if (!isExported(surveys.get(s.surveyId))) unexported += bytes;
     }
-    return { total, unexported };
+    return {
+      total,
+      unexported,
+      points,
+      drafts,
+      surveys: surveyList.length,
+      unexportedSurveys: surveyList.filter((s) => !isExported(s)).length,
+    };
+  }
+
+  // 記録データを全部消す（設定タブの「端末内のデータを全消去」）。
+  // 消すのは記録の 5 ストアだけで、settings（tileCacheMeta）と地図タイル
+  // （Cache Storage の実体）は残す。タイルは消すと再ダウンロードが重いうえ、
+  // 記録データとは別の持ち物なので、まとめて消してよいものではない。
+  // indexedDB.deleteDatabase は使わない（他タブに開かれていると止まり、
+  // スキーマも作り直すことになる）。
+  async clearRecords() {
+    const names = ['surveys', 'sessions', 'points', 'chunks', 'photos'];
+    const tx = this.db.transaction(names, 'readwrite');
+    for (const name of names) tx.objectStore(name).clear();
+    await txDone(tx);
   }
 
   async getSessionsBySurvey(surveyId) {

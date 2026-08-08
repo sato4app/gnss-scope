@@ -13,7 +13,7 @@
 // いずれも外部送信はしない。
 import { escapeMarkup, localStamp } from './view-utils.js';
 import { computeStaticStats, computeDeviceStats } from './accuracy.js';
-import { nextPointNo, surveyIdOf } from './survey.js';
+import { findSamePoint, nextPointNo, surveyIdOf } from './survey.js';
 import { SERIES } from './constants.js';
 
 // 地点単体の JSON。バンドル（format 2）は取込でのみ読む（出力は ZIP へ集約した）
@@ -380,6 +380,8 @@ export function buildCompareCsv(survey, entries) {
 // 端末を移した記録・他端末で測った記録を、この端末の一覧に並べて解析できるようにする。
 // 取込時は必ず新しい id を採番する（同じファイルを2回読んでも上書きにならない）。
 // 地点番号は取込先の調査日で採り直し、元の番号は sourcePointNo に残す。
+// 既に持っている地点（調査日＋記録開始時刻が一致）は取り込まない。
+// 戻り値: { entries, skipped }
 export async function importSessionFile(file, storage) {
   let data;
   try {
@@ -389,20 +391,28 @@ export async function importSessionFile(file, storage) {
   }
   const { survey, items } = validate(data);
 
-  const imported = [];
+  const entries = [];
+  let skipped = 0;
   for (const src of items) {
-    imported.push(await importPointData(src, survey, storage));
+    const entry = await importPointData(src, survey, storage);
+    if (entry) entries.push(entry);
+    else skipped++;
   }
-  return imported;
+  return { entries, skipped };
 }
 
 // 1地点ぶんの取込。調査日（surveyId）は元データの日付をそのまま使い、
 // 地点番号だけ取込先で採り直す（同じ日の測定は同じ調査日に集まる方が突き合わせやすいため）。
 // 出力ZIP の取込（js/package-io.js）も同じ経路を通る。
+// **同じ地点を既に持っていれば null を返して何も書かない**（重複を端末内に持たない）。
+// 判定は調査日＋記録開始時刻（`findSamePoint`）。ここで見るのは書き込みの直前なので、
+// 1つのファイルに同じ地点が2つ入っていても2件目が弾かれる。
 export async function importPointData(src, survey, storage) {
   const createdAt = src.session.createdAt || Date.now();
   const surveyId = src.session.surveyId || survey?.id || surveyIdOf(createdAt);
-  const pointNo = nextPointNo(await storage.getSessionsBySurvey(surveyId), surveyId);
+  const siblings = await storage.getSessionsBySurvey(surveyId);
+  if (findSamePoint(siblings, surveyId, createdAt)) return null;
+  const pointNo = nextPointNo(siblings, surveyId);
   await storage.ensureSurvey(surveyId, createdAt);
 
   // 調査日と地点番号まで含めた id（同じミリ秒に別の調査日の地点を取り込んでも衝突しない）

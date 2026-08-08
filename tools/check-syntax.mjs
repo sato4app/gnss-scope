@@ -46,7 +46,7 @@ const { holdDecision } = await import(pathToFileURL(resolve(jsDir, 'charts.js'))
 const { formatStats, formatCompare, formatWindow, formatResult, bearingText, formatBytes, localStamp } =
   await import(pathToFileURL(resolve(jsDir, 'view-utils.js')).href);
 const {
-  surveyIdOf, pointLabel, nextPointNo, timeWindow, windowOverlap, clockOffsetMs,
+  surveyIdOf, pointLabel, nextPointNo, findSamePoint, timeWindow, windowOverlap, clockOffsetMs,
   groupBySurvey, surveySummary, pairingOf, countInWindow, spanSec,
 } = await import(pathToFileURL(resolve(jsDir, 'survey.js')).href);
 const { compareRow, COMPARE_HEADER, importSessionFile } = await import(pathToFileURL(resolve(jsDir, 'file-io.js')).href);
@@ -781,8 +781,7 @@ const importStore = makeFakeStorage();
 const mkSample = (i) => ({ t: Date.UTC(2026, 6, 8, 1, 0, i), recvAt: 1.7e12 + i * 1000, lat: 34.8536, lon: 135.472, fixQuality: 1 });
 const jsonFile = (obj) => ({ text: async () => JSON.stringify(obj) });
 
-const importedEntries = await importSessionFile(
-  jsonFile({
+const bundleFile = jsonFile({
     app: 'gnss-scope',
     format: 2,
     survey: { id: '2026-07-08', label: '2026-07-08' },
@@ -796,10 +795,9 @@ const importedEntries = await importSessionFile(
         point: { samples: [mkSample(2)], deviceSamples: [{ t: 1.7e12, lat: 34.8536, lon: 135.472, accuracy: 5 }] },
       },
     ],
-  }),
-  importStore
-);
-assert(importedEntries.length === 2, '取込: バンドルの全地点を復元する');
+});
+const { entries: importedEntries, skipped: importedSkipped } = await importSessionFile(bundleFile, importStore);
+assert(importedEntries.length === 2 && importedSkipped === 0, '取込: バンドルの全地点を復元する');
 assert(importedEntries[0].session.pointNo === 1 && importedEntries[1].session.pointNo === 2, '取込: 地点番号は取込先で採り直す');
 assert(importedEntries[0].session.sourceId === 'rec_1' && importedEntries[0].session.sourcePointNo === 7, '取込: 元の id と地点番号を残す');
 assert(importedEntries[0].point.rawNmea.length === 1, '取込: 生NMEAも復元する');
@@ -807,8 +805,18 @@ assert(importedEntries[1].point.deviceStats != null, '取込: Android の集計�
 assert(importStore.db.surveys.has('2026-07-08'), '取込: 調査日（ツリーの根）を用意する');
 assert(importedEntries[0].session.id !== importedEntries[1].session.id, '取込: 地点ごとに別の id を採番する');
 
+// 同じファイルをもう一度読んでも増えない（調査日＋記録開始時刻で照合する）
+const reImported = await importSessionFile(bundleFile, importStore);
+assert(reImported.entries.length === 0 && reImported.skipped === 2, '取込: 既に持っている地点はスキップする');
+assert((await importStore.getSessionsBySurvey('2026-07-08')).length === 2, '取込: 重複を端末内に持たない');
+const dupSessions = [{ surveyId: '2026-07-08', createdAt: 100 }];
+assert(findSamePoint(dupSessions, '2026-07-08', 100) !== null, '重複判定: 調査日と記録開始時刻が一致すれば同じ地点');
+assert(findSamePoint(dupSessions, '2026-07-09', 100) === null, '重複判定: 調査日が違えば別の地点');
+assert(findSamePoint(dupSessions, '2026-07-08', 101) === null, '重複判定: 記録開始時刻が違えば別の地点');
+assert(findSamePoint(dupSessions, '2026-07-08', null) === null, '重複判定: 開始時刻を持たなければ別扱い');
+
 // 単体 JSON（format 1）も同じ入口で読める
-const singleImported = await importSessionFile(
+const { entries: singleImported } = await importSessionFile(
   jsonFile({
     app: 'gnss-scope',
     format: 1,
@@ -986,7 +994,8 @@ assert(pkgNoPhoto.counts.photos === 0, '出力: 写真を含めない指定が�
 assert(pkgNoPhoto.filename === 'gnss-scope_出力テスト.zip', '出力: 地点ごとのファイル名は地点名');
 
 const restoreStore = makeFakeStorage();
-const restored = await importPackageFile(pkg.blob, restoreStore);
+const { entries: restored, skipped: restoredSkipped } = await importPackageFile(pkg.blob, restoreStore);
+assert(restoredSkipped === 0, '取込: 初回は重複なし');
 assert(restored.length === 1 && restored[0].session.status === 'confirmed', '取込: ZIP の地点は確定済みで入る');
 assert(restored[0].point.samples.length === 3, '取込: 生エポックを復元する');
 assert(restored[0].point.rawNmea.length === 2, '取込: 生NMEA を復元する');
@@ -998,6 +1007,11 @@ assert(restored[0].session.sourcePointNo === 1 && restored[0].session.pointNo ==
 assert((await restoreStore.getPhotos(restored[0].session.id)).length === 1, '取込: 写真も復元する');
 assert(restored[0].session.summary.photoCount === 1, '取込: 写真の枚数を数え直す（元データの枚数を持ち込まない）');
 assert(parseRawNmea('a\r\nb\r\n', null).length === 2, '取込: 索引が無くても生行は復元できる');
+
+// 同じ ZIP をもう一度読んでも増えない（写真も増やさない）
+const reRestored = await importPackageFile(pkg.blob, restoreStore);
+assert(reRestored.entries.length === 0 && reRestored.skipped === 1, '取込: ZIP でも重複地点はスキップする');
+assert((await restoreStore.getPhotos(restored[0].session.id)).length === 1, '取込: 重複ぶんの写真を足さない');
 
 let pkgError = null;
 try {

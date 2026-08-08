@@ -44,6 +44,19 @@ export function nextPointNo(sessions, surveyId) {
   return max + 1;
 }
 
+// 同じ地点か（取込の重複判定）。**調査日 ＋ 記録開始時刻[ms]** で照合する。
+// id では照合できない：取込のたびに採り直すので、A→B→A と往復させると別物になる。
+// 記録開始時刻は元データのまま持ち回るので、往復しても書き出し直しても一致する。
+// 下書きとも照合する（同じ測定を下書きのまま持っているなら、取り込めば二重になる）。
+export function findSamePoint(sessions, surveyId, createdAt) {
+  if (!Number.isFinite(createdAt)) return null;
+  return (
+    (sessions || []).find(
+      (s) => (s.surveyId || surveyIdOf(s.createdAt)) === surveyId && s.createdAt === createdAt
+    ) || null
+  );
+}
+
 // ---- 測定区間（時間窓） ----
 
 // サンプル列 → 区間 { startedAt, endedAt, durationSec, count }。0件なら null。

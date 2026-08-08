@@ -158,14 +158,22 @@ export function initListUI({
     busy = true;
     setStatus(`読込中… ${file.name}`);
     try {
-      // 出力ZIP（format 3）・単体JSON（1）・バンドルJSON（2）を同じ入口で受ける
-      const entries = /\.zip$/i.test(file.name)
+      // 出力ZIP（format 3）・単体JSON（1）・バンドルJSON（2）を同じ入口で受ける。
+      // 既に持っている地点（調査日＋記録開始時刻が一致）は取り込まれずに返る。
+      const { entries, skipped } = /\.zip$/i.test(file.name)
         ? await importPackageFile(file, storage)
         : await importSessionFile(file, storage);
-      await load(entries[entries.length - 1]);
+      // 取り込んだものがあればそれを読込データにする。全部重複なら一覧の更新だけ
+      if (entries.length) await load(entries[entries.length - 1]);
+      else await refresh();
       await refreshStorageWarning();
+      const dup = skipped ? `（重複 ${skipped} 地点はスキップ）` : '';
       const epochs = entries.reduce((n, x) => n + x.point.samples.length, 0);
-      setStatus(`取り込みました: ${entries.length} 地点 / 合計 ${epochs} エポック`);
+      setStatus(
+        entries.length
+          ? `取り込みました: ${entries.length} 地点 / 合計 ${epochs} エポック${dup}`
+          : `すべて取り込み済みでした${dup}`
+      );
     } catch (err) {
       setStatus('');
       alert(`取り込みに失敗しました: ${err.message}`);

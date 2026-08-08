@@ -136,7 +136,16 @@ async function main() {
   const settingsUI = initSettingsUI({
     settings,
     mapView,
+    storage,
+    recorder,
     onPhotoLimitChange: () => recordUI.refreshPhotoUi(),
+    // 全消去の後始末：手元に残った参照（読込データ・未確定の記録）を手放してから
+    // 一覧と容量表示を作り直す。消えたものを指したままにしない。
+    onRecordsCleared: async () => {
+      recordUI.clearPending();
+      await listUI.load(null);
+      await listUI.refreshStorageWarning();
+    },
   });
   initTileUI({ tileCache: new TileCache(), storage, getMapType: () => settings.mapType });
   initConnectUI({

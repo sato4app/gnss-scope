@@ -167,7 +167,8 @@ export async function exportPackage(options) {
 
 // ---- 取込 ----
 // 出力した ZIP をこの端末の一覧へ戻す。地点の実データ・写真とも復元する。
-// 地点番号は取込先で採り直す（JSON 取込と同じ規則。js/file-io.js の importPointData）。
+// 地点番号の採り直しと**重複地点のスキップ**は JSON 取込と同じ規則
+// （js/file-io.js の importPointData）。戻り値も同じ { entries, skipped }。
 export async function importPackageFile(file, storage) {
   let files;
   try {
@@ -188,7 +189,8 @@ export async function importPackageFile(file, storage) {
   const list = Array.isArray(manifest.points) ? manifest.points : [];
   if (!list.length) throw new Error('地点が含まれていません');
 
-  const imported = [];
+  const entries = [];
+  let skipped = 0;
   for (const [i, meta] of list.entries()) {
     const dir = meta.dir || `points[${i}]`;
     const pointText = zipText(files, `${dir}/${meta.files?.point || POINT_NAME}`);
@@ -209,6 +211,11 @@ export async function importPackageFile(file, storage) {
     }
 
     const entry = await importPointData(src, manifest.survey, storage);
+    // 既に持っている地点は書かない。写真も足さない（同じ地点に写真だけ増えるのを防ぐ）
+    if (!entry) {
+      skipped++;
+      continue;
+    }
 
     // 写真（縮小済み JPEG）。取り込み直すので枚数・バイト数は addPhoto 側で数え直される
     for (const photo of meta.photos || []) {
@@ -223,9 +230,9 @@ export async function importPackageFile(file, storage) {
     // 写真の枚数は addPhoto が session 側へ書くので、返す地点は読み直す
     // （取込直後にそのまま読込データとして渡すため、手元の写しを古いままにしない）
     if (meta.photos?.length) entry.session = (await storage.getSession(entry.session.id)) || entry.session;
-    imported.push(entry);
+    entries.push(entry);
   }
-  return imported;
+  return { entries, skipped };
 }
 
 // raw.nmea（無加工）＋ raw_index.csv → [{ t, line }]。

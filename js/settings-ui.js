@@ -4,7 +4,7 @@
 // 既定値は js/constants.js が唯一の出所で、リロードするとそこへ戻る。
 // 同じタブ内でも、タイル事前DL は map.js、モック配信は connect-ui.js、
 // Wake Lock 表示は record-ui.js が担当する（機能ごとにまとめる方針）。
-import { $ } from './view-utils.js';
+import { $, formatBytes } from './view-utils.js';
 import { DEFAULT_SETTINGS, PHOTO_EDGE_OPTIONS } from './constants.js';
 
 // sw.js の版数 APP_VERSION（'yyyy-mm-dd.n' 形式）を読み取る
@@ -22,7 +22,9 @@ function versionOrder(v) {
   return m ? +(m[1] + m[2] + m[3] + m[4].padStart(4, '0')) : 0;
 }
 
-export function initSettingsUI({ settings, mapView, onPhotoLimitChange }) {
+// storage / recorder: 「端末内のデータを全消去」で使う
+// onRecordsCleared: 消した後の後始末（読込データの解除・一覧と容量表示の作り直し）
+export function initSettingsUI({ settings, mapView, storage, recorder, onPhotoLimitChange, onRecordsCleared }) {
   // 写真の長辺の選択肢は js/constants.js の PHOTO_EDGE_OPTIONS が唯一の出所。
   // 画面にも直書きしないよう、ラジオはここで組み立てる。
   $('photoedge-options').innerHTML = PHOTO_EDGE_OPTIONS.map(
@@ -73,6 +75,52 @@ export function initSettingsUI({ settings, mapView, onPhotoLimitChange }) {
       });
     }
   }
+
+  // ---- 端末内のデータを全消去 ----
+  // 日単位の削除は一覧タブ（「日ごと削除」）にある。ここはその上位で、端末を
+  // まっさらにするための操作。危険な操作なので、危険だと分かる場所に置き、
+  // **失うものを数えて見せてから**実行する。
+  // 確認を常に2回にはしない（全部書き出し済みの端末で毎回2回聞かれると、
+  // 確認そのものが読まれなくなる）。復元できないものがあるときだけ止める。
+  $('btn-clear-records').addEventListener('click', async () => {
+    if (recorder?.isRecording) {
+      alert('記録中は消去できません。停止してから実行してください。');
+      return;
+    }
+    let usage;
+    try {
+      usage = await storage.getStorageUsage();
+    } catch (e) {
+      alert(`端末内のデータを読めませんでした: ${e.message}`);
+      return;
+    }
+    if (!usage.surveys) {
+      alert('端末内に記録はありません。');
+      return;
+    }
+    const what =
+      `${usage.surveys} 日 / ${usage.points} 地点` +
+      (usage.drafts ? ` と下書き ${usage.drafts} 件` : '') +
+      ` / 約 ${formatBytes(usage.total)}`;
+    if (!confirm(`端末内の記録をすべて削除します。\n${what}\n\n元に戻せません。`)) return;
+    if (
+      usage.unexported > 0 &&
+      !confirm(
+        `未書き出しの調査日が ${usage.unexportedSurveys} 日（約 ${formatBytes(usage.unexported)}）あります。\n` +
+          '書き出していないデータは復元できません。本当に削除しますか？'
+      )
+    ) {
+      return;
+    }
+    try {
+      await storage.clearRecords();
+    } catch (e) {
+      alert(`削除に失敗しました: ${e.message}`);
+      return;
+    }
+    await onRecordsCleared?.();
+    alert('端末内の記録を削除しました。');
+  });
 
   // ---- アプリのバージョン確認・更新 ----
   // 「現行（動作中のSW）」と「最新（サーバー上の sw.js）」を比べ、差があれば更新を confirm する。

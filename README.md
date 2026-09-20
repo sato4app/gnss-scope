@@ -179,3 +179,20 @@ tools/check-syntax.mjs                 構文チェック＋純粋ロジック�
 | [docs/list-202607.md](docs/list-202607.md) | **一覧タブ機能まとめ**（日ごとの一覧・出力ZIP の構造・取込） | 出力データを扱う人 |
 
 解説は上記5文書から派生したもので、仕様の正本ではありません。
+
+## ライセンス
+
+ソースコードは [MIT License](LICENSE) で公開している（Copyright (c) 2026 sato4app）。
+
+ただし、**次のものは MIT License の対象外**とする。
+
+| 場所 | 内容 | 扱い |
+|------|------|------|
+| `data/minoh-emergency-points.geojson`<br>`data/minoh-hiking-routes-spots.geojson` | ハイキングマップのデータ（緊急ポイント・ルート・スポット） | 自分の著作物ではないため、提供元の利用条件に従う |
+| `vendor/leaflet/` | 外部ライブラリ Leaflet 1.9.4 | BSD 2-Clause（[vendor/leaflet/LICENSE](vendor/leaflet/LICENSE)）に従う |
+
+※ アプリアイコン（`icons/` の `icon-*.png` / `apple-touch-icon.png`）は生成AI で作成したもので、
+著作権を主張していない。MIT License はソースコードに対するものである。
+
+なお、地図タブが表示する**国土地理院の地理院タイル**は本リポジトリに含まれず（実行時に取得する）、
+本ライセンスの対象外である（提供元の利用条件に従う）。

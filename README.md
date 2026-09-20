@@ -188,7 +188,6 @@ tools/check-syntax.mjs                 構文チェック＋純粋ロジック�
 
 | 場所 | 内容 | 扱い |
 |------|------|------|
-| `data/minoh-emergency-points.geojson`<br>`data/minoh-hiking-routes-spots.geojson` | ハイキングマップのデータ（緊急ポイント・ルート・スポット） | 自分の著作物ではないため、提供元の利用条件に従う |
 | `vendor/leaflet/` | 外部ライブラリ Leaflet 1.9.4 | BSD 2-Clause（[vendor/leaflet/LICENSE](vendor/leaflet/LICENSE)）に従う |
 
 ※ アプリアイコン（`icons/` の `icon-*.png` / `apple-touch-icon.png`）は生成AI で作成したもので、

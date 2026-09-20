@@ -1,6 +1,6 @@
 # gnss-scope
 
-MAX-M10SからRaspberry Pi Picoに送られたNMEAでーたを、
+MAX-M10SからRaspberry Pi Picoに送られたNMEAデータを、
 bluetooth経由でスマホ(Android)に受信し、記録する。
 受信したNMEAデータは、indexeddbに保存する。
 NMEAデータからSkyPlot, SNR, DOP, DRMSを解析・表示する。

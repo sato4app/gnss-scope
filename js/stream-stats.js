@@ -1,4 +1,4 @@
-// 受信品質統計（docs/algospec-202607.md 5.）。
+// 受信品質統計（docs/algospec-202609.md 5.）。
 // 「M10S→Pico→BLE→アプリ」の各段で NMEA を取りこぼしていないかを1回の測定で
 // 確認できるよう、パイプラインの通過数・破棄数を集計する。
 //   [M10S→Pico]  $PPICO の ng / drop（UART チェックサムNG・バッファ破棄）

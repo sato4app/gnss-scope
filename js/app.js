@@ -14,6 +14,7 @@ import { MapView, initMapUI, TileCache, initTileUI } from './map.js';
 import { initConnectUI } from './connect-ui.js';
 import { initRecordUI } from './record-ui.js';
 import { initListUI } from './list-ui.js';
+import { initLoadedPicker } from './loaded-picker.js';
 import { initPhotoUI } from './photo-ui.js';
 import { initAnalysisUI } from './analysis-ui.js';
 import { initSettingsUI } from './settings-ui.js';
@@ -47,6 +48,7 @@ async function main() {
   let recordUI = null;
   let analysisUI = null;
   let mapUI = null;
+  let loadedPicker = null;
 
   // 記録中だけ動かす Android内蔵GNSS（DRMS の比較対象。仕様 4-8）
   const deviceGnss = new DeviceGnss({ onSample: (sample) => recorder.addDeviceSample(sample) });
@@ -65,12 +67,15 @@ async function main() {
     onFlushError: (failures) => recordUI.onWriteError(failures),
   });
 
-  // 読込データ（load したセッション）を解析タブ・地図タブへ配る
+  // 読込データ（load した地点）を解析タブ・地図タブへ配る。
+  // 一覧タブは調査日までしか並べないので、その日のどの地点を見るかは
+  // 解析・地図タブの地点セレクタ（loadedPicker）で選ぶ。
   let loaded = null;
   function setLoaded(entry) {
     loaded = entry;
     analysisUI.setLoaded(entry);
     mapUI.setLoaded(entry);
+    loadedPicker.sync(entry);
   }
 
   // ---- 受信パイプライン（エポック確定 → 各表示の更新。rAF スロットリング） ----
@@ -117,11 +122,16 @@ async function main() {
   const listUI = initListUI({
     storage,
     recorder,
-    photos,
     onLoad: setLoaded,
     getLoadedId: () => loaded?.session?.id ?? null,
     getPendingId: () => recordUI?.pendingId ?? null,
     onPendingGone: () => recordUI?.clearPending(),
+  });
+  // 解析タブ・地図タブに同じ地点セレクタを置く（読込データの入れ替えは listUI に任せる）
+  loadedPicker = initLoadedPicker({
+    storage,
+    ids: ['an-point-pick', 'map-point-pick'],
+    onPick: (id) => listUI.loadSession(id),
   });
   recordUI = initRecordUI({
     recorder,

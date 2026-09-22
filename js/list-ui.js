@@ -1,22 +1,22 @@
-// 「一覧」タブ：端末内（IndexedDB）に残っている測位データを日ごとに並べ、そこから持ち出す。
-//   調査日  出力（ZIP 1ファイル）/ 日ごと削除
-//   地点    読込 / 詳細 / 編集（地点名・メモ・写真）/ 出力（その地点だけ）/ 削除
+// 「一覧」タブ：端末内（IndexedDB）に残っている測位データを**日ごとに**並べ、そこから持ち出す。
+//   調査日  読込 / 出力（ZIP 1ファイル）/ 日ごと削除
 //   下書き  保存（確定）/ 読込 / 削除
 //   その他  読込（JSON / 出力ZIP の取込）、端末内のデータ量の警告
 // 記録の収集そのもの（record → stop → save）は record-ui.js が持つ。
 //
-// 行は役割で3段に分ける（1行に詰め込むと、どれが「測ったときのこと」でどれが
-// 「残っているもの」なのか読み取れなくなる）:
-//   1行目 地点番号・種別・地点名・写真枚数・取りこぼしの警告
-//   2行目 測定区間・停止理由・2系統のばらつき（pointSummaryText）
-//   3行目 中心座標・NMEA の量・区間の重なり・データ量（pointDataText）
-// 明細は「詳細」を開いたときだけ出す（測位結果の全文は記録タブと同じ formatResult）。
+// 確定した地点は1行ずつ並べない。20地点×数日ぶんの行を畳んで「調査日」に集計し、
+// 持ち出し（出力）と片付け（削除）も日単位で行う。1地点ずつ見たいときは読み込んで
+// 解析・地図タブで切り替える（地点セレクタ＝js/loaded-picker.js）。
+// 日の行に出す値は3段に分ける:
+//   1段目 日付・地点数・下書き件数・書出済・読込中・取りこぼしの警告・2系統の内訳
+//   2段目 測定区間・エポック数・生NMEA の量（surveySpanText / surveyDataText）
+//   3段目 平均DRMS・写真枚数・データ量
 //
-// この一覧は session だけを読んで描く（実データ＝チャンクは結合しない）。20地点×数日を
-// 開くたびに結合していては待たされるため、行に出す値は session.summary に持たせてある。
+// この一覧は session だけを読んで描く（実データ＝チャンクは結合しない）。開くたびに
+// 結合していては待たされるため、集計に使う値は session.summary に持たせてある。
 //
 // 記録は下書きとして始まり、記録中もチャンクが追記される（js/recorder.js）。
-// そのため「保存を押す前に落ちた」でも記録は残る。一覧では下書きを調査日の先頭に出し、
+// そのため「保存を押す前に落ちた」でも記録は残る。下書きだけは調査日の中に行として出し、
 // そこから確定できるようにするのが回収経路になる。
 // 停止処理が走らないまま落ちた下書きは集計値を持たないので、読込・確定のときに
 // ここで組み立て直す（storage.js を accuracy.js に依存させないため）。
@@ -34,13 +34,12 @@ import { exportPackage, importPackageFile } from './package-io.js';
 
 // storage:      IndexedDB ラッパ
 // recorder:     収集中の下書き id を見るためだけに使う（その行の操作を止める）
-// photos:       写真パネル（photo-ui.js）
 // onLoad:       読込データの差し替え通知（解析タブ・地図タブへ配る）
-// getLoadedId:  現在の読込データの地点 id（一覧で強調するため）
+// getLoadedId:  現在の読込データの地点 id（読込中の調査日を示すため）
 // getPendingId: 停止直後の未確定な記録の id（削除されたら record-ui へ知らせる）
 // onPendingGone: その未確定な記録が一覧から消えたときの通知
 export function initListUI({
-  storage, recorder, photos, onLoad, getLoadedId, getPendingId, onPendingGone,
+  storage, recorder, onLoad, getLoadedId, getPendingId, onPendingGone,
 }) {
   // 開いている調査日。refresh のたびに畳んでしまうと、操作するたびに開き直すことになる
   const openSurveys = new Set();
@@ -149,6 +148,32 @@ export function initListUI({
     await refresh();
   }
 
+  // 地点 id から読込データを組み立てて配る。
+  // 調査日の「読込」・取込の直後・解析/地図タブの地点セレクタが、どれもここを通る。
+  async function loadSession(id) {
+    const session = await storage.getSession(id);
+    if (!session) {
+      alert('記録が見つかりません');
+      return false;
+    }
+    const point = (await storage.getPointsBySession(id))[0];
+    if (!point) {
+      alert('記録データが見つかりません');
+      return false;
+    }
+    await load(withStats(session, point));
+    return true;
+  }
+
+  // その調査日の先頭（No.1）を読込データにする。地点行を畳んだので、
+  // 端末内のデータへは「日から入って、あとは解析・地図タブで地点を選ぶ」経路になる。
+  async function loadSurveyHead(surveyId) {
+    const first = (await storage.getSessionsBySurvey(surveyId)).filter(isConfirmed)[0];
+    if (first) return loadSession(first.id);
+    await refresh();
+    return false;
+  }
+
   // ---- 取込（JSON / 出力ZIP） ----
   $('btn-import').addEventListener('click', () => $('file-import').click());
   $('file-import').addEventListener('change', async (e) => {
@@ -160,11 +185,14 @@ export function initListUI({
     try {
       // 出力ZIP（format 3）・単体JSON（1）・バンドルJSON（2）を同じ入口で受ける。
       // 既に持っている地点（調査日＋記録開始時刻が一致）は取り込まれずに返る。
-      const { entries, skipped } = /\.zip$/i.test(file.name)
+      const { entries, skipped, surveyId } = /\.zip$/i.test(file.name)
         ? await importPackageFile(file, storage)
         : await importSessionFile(file, storage);
-      // 取り込んだものがあればそれを読込データにする。全部重複なら一覧の更新だけ
-      if (entries.length) await load(entries[entries.length - 1]);
+      // 取り込んだものをそのまま読込データにする。1地点ならその地点、日まるごとなら先頭（No.1）
+      // から入り、他の地点は解析・地図タブのセレクタで選ぶ。全部重複でも日は分かるので開ける
+      // ―― 手元にあるのに読めない、という行き止まりを作らない。
+      if (entries.length === 1) await load(entries[0]);
+      else if (surveyId) await loadSurveyHead(surveyId);
       else await refresh();
       await refreshStorageWarning();
       const dup = skipped ? `（重複 ${skipped} 地点はスキップ）` : '';
@@ -190,7 +218,8 @@ export function initListUI({
   }
 
   // ---- 出力（ZIP 1ファイル） ----
-  // 調査日ぶんと地点1つぶんで中身の構造は同じにしてある（取込の経路を1本にするため）。
+  // 持ち出しは調査日まるごとで行う（1地点だけ書き出しても日は片付かない）。
+  // ZIP の中身は kind によらず同じ構造なので、取り込む側の経路は1本で済む。
   async function runExport({ survey, sessions, kind }) {
     if (busy) return;
     busy = true;
@@ -221,68 +250,18 @@ export function initListUI({
     if (gone) onPendingGone();
   }
 
-  // 地点の行アクション（読込 / 詳細 / 出力 / 削除 / 編集 / 下書きの確定）
+  // 下書きの行アクション（読込 / 削除 / 保存＝確定）
   async function runAction(act, session, li) {
     if (act === 'load') {
-      const point = (await storage.getPointsBySession(session.id))[0];
-      if (!point) {
-        alert('記録データが見つかりません');
-        return;
-      }
-      await load(withStats(session, point));
-      return;
-    }
-    // 測位結果の全文。集計値だけの point レコードで足りる（実データは結合しない）
-    if (act === 'detail') {
-      const box = li.querySelector('.detail-box');
-      box.hidden = !box.hidden;
-      if (box.hidden) return;
-      const point = (await storage.getPointRecords(session.id))[0] || null;
-      const text = point?.stats ? savedText(session, point) : '集計値がありません（「読込」で組み立て直せます）';
-      box.textContent = session.memo ? `メモ: ${session.memo}\n${text}` : text;
-      return;
-    }
-    if (act === 'export') {
-      const surveyId = session.surveyId || surveyIdOf(session.createdAt);
-      const survey = (await storage.getSurvey(surveyId)) || { id: surveyId };
-      await runExport({ survey, sessions: [session], kind: 'point' });
+      await loadSession(session.id);
       return;
     }
     if (act === 'del') {
-      const what = isConfirmed(session) ? `「${session.label}」` : 'この下書き';
-      if (!confirm(`${what}を削除しますか？`)) return;
+      if (!confirm('この下書きを削除しますか？')) return;
       dropPendingIf(session.id === getPendingId());
       await storage.deleteSession(session.id);
       if (session.id === getLoadedId()) await load(null);
       else await refresh();
-      await refreshStorageWarning();
-      return;
-    }
-    // 確定済み地点の編集：地点名・メモ・写真をその行で直せるようにする
-    if (act === 'edit') {
-      const form = li.querySelector('.edit-form');
-      form.hidden = !form.hidden;
-      if (form.hidden) return;
-      form.querySelector('.edit-label').value = session.label || '';
-      form.querySelector('.edit-memo').value = session.memo || '';
-      await renderRowPhotos(session, li);
-      return;
-    }
-    if (act === 'save-edit') {
-      const form = li.querySelector('.edit-form');
-      const label = form.querySelector('.edit-label').value.trim();
-      await storage.putSession({
-        ...session,
-        label: label || session.label,
-        memo: form.querySelector('.edit-memo').value.trim(),
-      });
-      await refresh();
-      return;
-    }
-    // 写真の増減では一覧を作り直さない（作り直すと開いている編集フォームが閉じてしまう）
-    if (act === 'edit-photo') {
-      if (!(await photos.pickAndAdd(session.id))) return;
-      await renderRowPhotos(session, li);
       await refreshStorageWarning();
       return;
     }
@@ -306,12 +285,18 @@ export function initListUI({
     }
   }
 
-  const renderRowPhotos = (session, li) =>
-    photos.render(li.querySelector('.edit-photo-strip'), li.querySelector('.edit-photo-count'), session.id);
-
   // 調査日（1日ぶん）のアクション。20地点を1ファイルにまとめて持ち出すための入口。
   async function runSurveyAction(act, survey) {
     const sessions = await storage.getSessionsBySurvey(survey.id);
+    // その日を解析・地図タブへ渡す。先頭の地点から入り、あとは向こうのセレクタで行き来する
+    if (act === 'loadsurvey') {
+      if (!sessions.some(isConfirmed)) {
+        alert('この調査日には地点がありません（下書きはその行から読み込めます）');
+        return;
+      }
+      await loadSurveyHead(survey.id);
+      return;
+    }
     if (act === 'delsurvey') {
       const drafts = sessions.filter((s) => !isConfirmed(s)).length;
       const what = `${sessions.length - drafts} 地点` + (drafts ? `と下書き ${drafts} 件` : '');
@@ -334,7 +319,8 @@ export function initListUI({
   }
 
   // ---- 描画 ----
-  // 調査日 → 地点 のツリー。開いている調査日は開いたまま保つ（既定は最新の日だけ開く）。
+  // 並ぶのは調査日だけ。確定した地点はその日の集計に畳み、行としては出さない
+  // （1地点ずつ見るのは解析・地図タブの仕事）。開いている調査日は開いたまま保つ。
   async function refresh() {
     const ul = $('session-list');
     ul.innerHTML = '';
@@ -354,24 +340,31 @@ export function initListUI({
     }
     for (const group of groups) {
       const survey = surveys.get(group.surveyId) || { id: group.surveyId };
-      const li = surveyRow(survey, group.sessions);
+      const li = surveyRow(survey, group.sessions, loadedId);
       const pointList = li.querySelector('.point-list');
+      // 行として残すのは下書きだけ（確定していない記録は集計に混ぜられないし、
+      // ここから確定させるのが落ちたときの回収経路でもある）
       for (const session of group.sessions) {
-        pointList.appendChild(
-          isConfirmed(session) ? pointRow(session, loadedId) : draftRow(session, loadedId, recordingId)
-        );
+        if (!isConfirmed(session)) pointList.appendChild(draftRow(session, loadedId, recordingId));
       }
       ul.appendChild(li);
     }
   }
 
   // 調査日1日ぶんの見出し＋集計＋日ごとの操作
-  function surveyRow(survey, sessions) {
+  // loadedId: 読込中の地点。地点行を畳んだぶん、「今どの日を見ているか」はここに出す
+  function surveyRow(survey, sessions, loadedId) {
     // 集計は確定済みのみ。下書きが混ざると平均DRMS も両系統カウントも歪む
     const confirmed = sessions.filter(isConfirmed);
     const draftCount = sessions.length - confirmed.length;
     const sum = surveySummary(confirmed);
     const bytes = sessions.reduce((n, x) => n + sessionBytes(x), 0);
+    const loadedHere = sessions.find((x) => x.id === loadedId) || null;
+    // 取りこぼしのある地点は日の行にまとめて出す（再測が要る日をここで拾えるようにする）。
+    // 地点ごとの内訳は行に出す場所が無いので title に入れる。
+    const warns = confirmed
+      .map((x) => ({ no: x.pointNo, text: lossWarnText(x) }))
+      .filter((x) => x.text);
     const li = document.createElement('li');
     li.className = 'survey';
     li.innerHTML = `
@@ -381,11 +374,14 @@ export function initListUI({
           <span class="sv-count">${sum.points} 地点</span>
           ${draftCount ? `<span class="sv-draft">下書き ${draftCount}件</span>` : ''}
           ${isExported(survey) ? '<span class="sv-exported">書出済</span>' : ''}
+          ${loadedHere ? `<span class="sv-loaded">読込中 ${escapeMarkup(loadedHere.pointNo ? `No.${loadedHere.pointNo}` : '下書き')}</span>` : ''}
+          ${warns.length ? `<span class="sv-warn" title="${escapeMarkup(warns.map((x) => `No.${x.no} ${x.text}`).join('、'))}">⚠ ${warns.length}地点</span>` : ''}
           <span class="sv-pair">両系統 ${sum.both}${sum.gnssOnly ? ` / ${SERIES.gnss.label}のみ ${sum.gnssOnly}` : ''}${sum.deviceOnly ? ` / ${SERIES.device.label}のみ ${sum.deviceOnly}` : ''}</span>
         </summary>
         <div class="sv-sub">${escapeMarkup([surveySpanText(sum), surveyDataText(sum)].filter(Boolean).join('　'))}</div>
         <div class="sv-sub">平均DRMS: ${SERIES.gnss.label} ${fmt(sum.avgDrms, 2, 'm')} / ${SERIES.device.label} ${fmt(sum.avgDeviceDrms, 2, 'm')}${sum.photos ? `　📷${sum.photos}枚` : ''}　データ量 約 ${formatBytes(bytes)}</div>
         <div class="s-actions sv-actions">
+          <button class="btn" data-sact="loadsurvey">読込</button>
           <button class="btn primary" data-sact="export">📦 出力</button>
           <button class="btn danger" data-sact="delsurvey">日ごと削除</button>
         </div>
@@ -403,7 +399,7 @@ export function initListUI({
     return li;
   }
 
-  // 行に共通の中身（3段のテキスト）と、クリックの取り回し
+  // 下書きの行に共通の中身（3段のテキスト）と、クリックの取り回し
   function buildRow(session, loadedId, headHtml, actionsHtml, extraHtml = '') {
     const li = document.createElement('li');
     if (session.id === loadedId) li.classList.add('loaded');
@@ -413,47 +409,11 @@ export function initListUI({
       <div class="s-sub s-pair">${escapeMarkup(pointDataText(session, sessionBytes(session)))}</div>
       <div class="s-actions">${actionsHtml}</div>
       ${extraHtml}`;
-    li.addEventListener('click', async (ev) => {
+    li.addEventListener('click', (ev) => {
       const act = ev.target.dataset?.act;
-      const photoId = ev.target.dataset?.photo;
       if (act) runAction(act, session, li);
-      else if (photoId && (await photos.confirmDelete(session.id, photoId))) {
-        await renderRowPhotos(session, li);
-        await refreshStorageWarning();
-      }
     });
     return li;
-  }
-
-  // 1地点ぶんの行（確定済み）。編集フォームには写真パネルも入れる
-  // （現地で撮り忘れた写真を後から足せるようにするのが主目的）。
-  function pointRow(session, loadedId) {
-    const imported = !!session.importedAt;
-    const photoCount = session.summary?.photoCount || 0;
-    const warn = lossWarnText(session);
-    const head =
-      `<span class="s-no">No.${session.pointNo ?? '—'}</span>` +
-      `<span class="s-type ${imported ? 'imported' : ''}">${imported ? '取込' : '記録'}</span>` +
-      `<span class="s-label">${escapeMarkup(session.label)}</span>` +
-      (photoCount ? `<span class="s-photos">📷${photoCount}</span>` : '') +
-      (warn ? `<span class="s-warn" title="${escapeMarkup(warn)}">⚠</span>` : '');
-    const actions = `
-      <button class="btn" data-act="load">読込</button>
-      <button class="btn" data-act="detail">詳細</button>
-      <button class="btn" data-act="edit">編集</button>
-      <button class="btn" data-act="export">出力</button>
-      <button class="btn danger" data-act="del">削除</button>`;
-    const extra =
-      `<div class="detail-box result-box" hidden></div>` +
-      `<div class="edit-form" hidden>
-        <div class="rec-form">
-          <input type="text" class="edit-label" placeholder="地点名">
-          <input type="text" class="edit-memo" placeholder="メモ（任意）">
-        </div>
-        ${photos.panelHtml()}
-        <div class="s-actions"><button class="btn primary" data-act="save-edit">変更を保存</button></div>
-      </div>`;
-    return buildRow(session, loadedId, head, actions, extra);
   }
 
   // 下書きの行。出力は出さない（確定してから持ち出す）。
@@ -480,5 +440,5 @@ export function initListUI({
   refresh();
   refreshStorageWarning();
 
-  return { refresh, refreshStorageWarning, load, confirmDraft, defaultLabel, savedText };
+  return { refresh, refreshStorageWarning, load, loadSession, confirmDraft, defaultLabel, savedText };
 }

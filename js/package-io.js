@@ -24,7 +24,8 @@
 import { zipEncode, zipDecode, zipText } from './zip.js';
 import {
   buildCompareCsv, buildDeviceCsv, buildEpochsCsv, buildGpx, buildPointJson,
-  buildRawIndexCsv, buildRawNmea, buildSurveyJson, download, importPointData, safeName, validateEntry,
+  buildRawIndexCsv, buildRawNmea, buildSurveyJson, download, importPointData, importSurveyId,
+  safeName, validateEntry,
 } from './file-io.js';
 import { isConfirmed } from './storage.js';
 import { pad2 } from './view-utils.js';
@@ -191,6 +192,7 @@ export async function importPackageFile(file, storage) {
 
   const entries = [];
   let skipped = 0;
+  let surveyId = null;
   for (const [i, meta] of list.entries()) {
     const dir = meta.dir || `points[${i}]`;
     const pointText = zipText(files, `${dir}/${meta.files?.point || POINT_NAME}`);
@@ -202,6 +204,7 @@ export async function importPackageFile(file, storage) {
       throw new Error(`${dir}: ${POINT_NAME} を解析できませんでした: ${e.message}`);
     }
     const src = validateEntry({ session: parsed.session, point: parsed.point }, dir);
+    surveyId = importSurveyId(src, manifest.survey); // 全部重複でも、どの日の ZIP かは返す
 
     // 生NMEA は無加工で入っているので、行ごとの受信時刻を索引から復元する
     const rawName = `${dir}/${meta.files?.raw || RAW_NAME}`;
@@ -232,7 +235,7 @@ export async function importPackageFile(file, storage) {
     if (meta.photos?.length) entry.session = (await storage.getSession(entry.session.id)) || entry.session;
     entries.push(entry);
   }
-  return { entries, skipped };
+  return { entries, skipped, surveyId };
 }
 
 // raw.nmea（無加工）＋ raw_index.csv → [{ t, line }]。

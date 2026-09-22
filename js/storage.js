@@ -12,7 +12,7 @@
 //
 // 記録は「下書き（status:'draft'）」として始まり、記録中はチャンクが追記される。
 // 「保存」で確定（status:'confirmed'）し、そこで初めて地点番号が振られる。
-// 停止を待たずに書くので、アプリが落ちても直近フラッシュまでは残る（docs/design-202607.md 3.）。
+// 停止を待たずに書くので、アプリが落ちても直近フラッシュまでは残る（docs/design-202609.md 3.）。
 import { surveyIdOf } from './survey.js';
 
 const DB_NAME = 'gnssScopeDB';

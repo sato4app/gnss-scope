@@ -7,9 +7,7 @@
 // EXIF の向きは createImageBitmap の imageOrientation:'from-image' に任せる
 // （自前で EXIF を読むと、対応端末ごとの差分を抱え込むため）。
 //
-// 写真パネルは2か所に出る（保存フォームと、記録一覧の地点編集フォーム）。
-// 前者は index.html にある静的な要素、後者は行ごとに組み立てる文字列なので、
-// 静的な要素には wirePanel()、動的な行には panelHtml() ＋ pickAndAdd()/confirmDelete() を使う。
+// 写真パネルは記録タブの保存フォームに出る（index.html にある静的な要素）。配線は wirePanel()。
 import { $, escapeMarkup } from './view-utils.js';
 
 // 目標バイト数。1地点5枚で 1MB 前後に収まる大きさ。
@@ -158,19 +156,7 @@ export function initPhotoUI({ storage, settings }) {
     });
   }
 
-  // 動的に組み立てる行（記録一覧の地点編集フォーム）へ埋めるマークアップ。
-  // クリックは行側のイベント委譲で拾う（data-act="edit-photo" / data-photo）。
-  function panelHtml() {
-    if (!isEnabled()) return '';
-    return `
-      <div class="photo-box">
-        <button class="btn" data-act="edit-photo">📷 写真を追加</button>
-        <span class="note-inline edit-photo-count"></span>
-      </div>
-      <div class="photo-strip edit-photo-strip"></div>`;
-  }
-
   const isEnabled = () => settings.photoMaxCount > 0;
 
-  return { isEnabled, render, pickAndAdd, confirmDelete, wirePanel, panelHtml };
+  return { isEnabled, render, wirePanel };
 }

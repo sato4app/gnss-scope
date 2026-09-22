@@ -136,7 +136,8 @@
 
     <!-- 3. 一覧 -->
     <!-- 端末内に残っている測位データを日ごとに並べ、ここから持ち出す。
-         記録タブが「測る画面」、この画面が「持ち出して片付ける画面」。 -->
+         記録タブが「測る画面」、この画面が「持ち出して片付ける画面」。
+         地点は1件ずつ並べず調査日に畳む（1地点ずつ見るのは解析・地図タブ）。 -->
     <section class="page" id="page-list">
       <div id="storage-warn" class="note-warn" hidden></div>
       <div class="conn-bar">
@@ -146,7 +147,7 @@
       </div>
       <div id="list-status" class="tile-status" hidden></div>
       <ul id="session-list" class="session-list"></ul>
-      <div class="note-dim">地点は「調査日 + 地点番号」で管理します。1地点の GNSS受信機と Android内蔵の測位は同じレコードに入るため対応が崩れません。「📦 出力」はその調査日（または地点）を ZIP 1ファイルにまとめます（対応表CSV・エポックCSV・GPX・生NMEA・写真を同梱）。出力した ZIP と JSON は「📂 読込」で戻せます。「下書き」は停止しただけでまだ地点になっていない記録で、地点番号・集計・出力の対象外です。</div>
+      <div class="note-dim">地点は「調査日 + 地点番号」で管理し、一覧には調査日ごとにまとめて出します。「読込」はその日を解析・地図タブへ渡します（どの地点を見るかは、それぞれのタブの地点選択で切り替えます）。「📦 出力」はその調査日を ZIP 1ファイルにまとめます（対応表CSV・エポックCSV・GPX・生NMEA・写真を同梱）。出力した ZIP と JSON は上の「📂 読込」で戻せ、そのまま解析・地図タブで開けます。「下書き」は停止しただけでまだ地点になっていない記録で、地点番号・集計・出力の対象外です。</div>
     </section>
 
     <!-- 4. 解析 -->
@@ -154,6 +155,8 @@
       <div class="src-switch">
         <label><input type="radio" name="ansrc" value="live" checked>ライブ</label>
         <label><input type="radio" name="ansrc" value="loaded">読込データ</label>
+        <!-- 読み込んだ調査日の中で地点を切り替える（一覧タブは日までしか並べない） -->
+        <select id="an-point-pick" class="point-pick" hidden></select>
         <span id="an-src-note" class="note-inline">—</span>
       </div>
 
@@ -207,6 +210,7 @@
     <section class="page" id="page-map">
       <div id="map"></div>
       <div id="map-ctrl">
+        <select id="map-point-pick" class="map-pick" hidden></select>
         <div id="map-info" class="map-info">読込データなし</div>
         <button id="btn-fit-loaded" class="map-btn" style="bottom: 52px">読込データへ</button>
         <button id="btn-follow" class="map-btn active">追従</button>

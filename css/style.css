@@ -221,9 +221,6 @@ label.note-inline { display: flex; align-items: center; gap: 4px; }
   line-height: 20px;
   cursor: pointer;
 }
-.session-list .edit-form { margin-top: 8px; }
-.session-list .edit-form .rec-form { margin-top: 0; }
-
 
 .result-box {
   font-size: 12px;
@@ -361,18 +358,11 @@ label.note-inline { display: flex; align-items: center; gap: 4px; }
   background: var(--good);
   color: #06281a;
 }
-.session-list .s-type.imported { background: var(--c-qzss); color: #fff; }
-/* 下書き＝停止しただけでまだ地点になっていない記録。確定済みと一目で区別する */
+/* 行として並ぶのは下書き＝停止しただけでまだ地点になっていない記録だけ */
 .session-list .s-type.draft { background: var(--warn); color: #2b2410; }
 .session-list .s-type.recording { background: var(--bad); color: #fff; }
 .session-list .draft-form { margin-top: 8px; }
 .session-list .draft-form .btn { flex: 0 0 auto; }
-.session-list .s-photos { font-size: 11px; color: var(--muted); flex: 0 0 auto; }
-/* 取りこぼしの警告（取得率・欠落）。内訳は title 属性に入れる */
-.session-list .s-warn { font-size: 12px; color: var(--warn); flex: 0 0 auto; cursor: help; }
-/* 「詳細」で開く測位結果の全文 */
-.session-list .detail-box { margin-top: 8px; }
-.session-list .detail-box[hidden] { display: none; }
 .session-list .sv-exported {
   font-size: 11px;
   padding: 1px 8px;
@@ -387,6 +377,15 @@ label.note-inline { display: flex; align-items: center; gap: 4px; }
   background: var(--warn);
   color: #2b2410;
 }
+/* 取りこぼし（取得率・欠落）のある地点がその日にいくつあるか。内訳は title 属性 */
+.session-list .sv-warn { font-size: 11px; color: var(--warn); flex: 0 0 auto; cursor: help; }
+.session-list .sv-loaded {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
 .session-list .s-label { font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-list .s-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
 .session-list .s-pair { font-variant-numeric: tabular-nums; }
@@ -394,7 +393,7 @@ label.note-inline { display: flex; align-items: center; gap: 4px; }
 .session-list .s-actions .btn { padding: 4px 9px; font-size: 12px; }
 .session-list .s-actions .btn[disabled] { opacity: 0.4; }
 
-/* 調査日（1日ぶんの調査）でまとめたツリー。根＝調査日、葉＝地点。 */
+/* 調査日（1日ぶんの調査）でまとめる。葉として残るのは下書きだけ。 */
 .session-list li.survey { padding: 0; background: none; border: none; margin-bottom: 10px; }
 .session-list li.survey > details { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .session-list li.survey > details > summary {
@@ -430,6 +429,17 @@ label.note-inline { display: flex; align-items: center; gap: 4px; }
   font-size: 13px;
 }
 .src-switch label { display: flex; align-items: center; gap: 5px; }
+/* 読み込んだ調査日の中で地点を選ぶ（解析タブ） */
+.point-pick {
+  max-width: 45%;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.point-pick[hidden] { display: none; }
 
 .epoch-box {
   margin-top: 8px;
@@ -536,6 +546,21 @@ label.note-inline { display: flex; align-items: center; gap: 4px; }
 }
 .map-btn.active { color: #fff; background: var(--accent); border-color: var(--accent); }
 .map-btn:disabled { opacity: 0.45; }
+
+.map-pick {
+  position: absolute;
+  left: 10px;
+  bottom: 40px;
+  max-width: calc(100% - 106px);
+  pointer-events: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+.map-pick[hidden] { display: none; }
 
 .map-info {
   position: absolute;

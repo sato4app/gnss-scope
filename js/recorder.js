@@ -1,11 +1,11 @@
 // 記録（record → stop → save）。静止点に留まって連続エポックを収集し、
 // 停止時に「ばらつき（DRMS / CEP / 散布図）」を集計する。
 //   record: 下書きを作ってから収集開始。autoStop 有効時は「最低 minSec 秒 → 中心・DRMS が
-//           holdSec 秒横ばい」で自動停止する（docs/algospec-202607.md 3.）。
+//           holdSec 秒横ばい」で自動停止する（docs/algospec-202609.md 3.）。
 //   stop:   収集停止。集計して下書きに書き足す。まだ地点にはしない。
 //   save:   ラベル・メモを付けて確定する（record-ui.js 側。地点番号はそこで採番）。
 // 集計は accuracy.js の computeStaticStats。測定区間の受信品質（rxStats）も
-// summary に残す（docs/algospec-202607.md 5.）。
+// summary に残す（docs/algospec-202609.md 5.）。
 //
 // **記録中に 5 エポックごとチャンクを追記する**のがこのモジュールの要。停止まで
 // メモリに溜め込まないので、アプリが落ちても直近フラッシュまでは残る。停止時に

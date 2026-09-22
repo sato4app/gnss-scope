@@ -393,12 +393,20 @@ export async function importSessionFile(file, storage) {
 
   const entries = [];
   let skipped = 0;
+  let surveyId = null;
   for (const src of items) {
+    surveyId = importSurveyId(src, survey); // 複数日が混ざるファイルでは最後の日
     const entry = await importPointData(src, survey, storage);
     if (entry) entries.push(entry);
     else skipped++;
   }
-  return { entries, skipped };
+  return { entries, skipped, surveyId };
+}
+
+// 取込先の調査日。重複でスキップした地点でも「どの日のものだったか」は返せるようにする
+// （一覧タブが取込の直後にその日を開くため）。
+export function importSurveyId(src, survey) {
+  return src.session.surveyId || survey?.id || surveyIdOf(src.session.createdAt || Date.now());
 }
 
 // 1地点ぶんの取込。調査日（surveyId）は元データの日付をそのまま使い、
@@ -409,7 +417,7 @@ export async function importSessionFile(file, storage) {
 // 1つのファイルに同じ地点が2つ入っていても2件目が弾かれる。
 export async function importPointData(src, survey, storage) {
   const createdAt = src.session.createdAt || Date.now();
-  const surveyId = src.session.surveyId || survey?.id || surveyIdOf(createdAt);
+  const surveyId = importSurveyId(src, survey);
   const siblings = await storage.getSessionsBySurvey(surveyId);
   if (findSamePoint(siblings, surveyId, createdAt)) return null;
   const pointNo = nextPointNo(siblings, surveyId);

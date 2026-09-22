@@ -14,7 +14,7 @@
 //
 // 時刻軸について：受信機のサンプル t は GPS時刻(UTC)、内蔵のサンプル t は端末時計で、
 // 別々の時計である。区間の突き合わせは両者が共通に持つ端末時計（受信機側は recvAt）で行い、
-// GPS時刻との差は clockOffsetMs として別に残す（docs/design-202607.md 4.）。
+// GPS時刻との差は clockOffsetMs として別に残す（docs/design-202609.md 4.）。
 import { median } from './accuracy.js';
 
 const p2 = (n) => String(n).padStart(2, '0');

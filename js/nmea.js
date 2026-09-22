@@ -2,7 +2,7 @@
 //   LineBuffer      BLE チャンク → 1行復元
 //   parseSentence   1行 → 構造化されたセンテンス
 //   EpochAssembler  同一時刻のセンテンス群 → 1エポック
-// 対象は GGA / RMC / GSA / GSV / VTG / GST と Pico 独自文 $PPICO（docs/algospec-202607.md 5.）。
+// 対象は GGA / RMC / GSA / GSV / VTG / GST と Pico 独自文 $PPICO（docs/algospec-202609.md 5.）。
 // マルチGNSS（GP/GL/GA/GB/BD/GQ/GN）対応。チェックサム計算は xorChecksum に集約し、
 // 検証（validateChecksum）と開発用モックの文生成（transport.js）で共用する。
 // このモジュールは他のモジュールへ依存しない（受信経路の最下層に置くため）。

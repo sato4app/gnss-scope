@@ -15,8 +15,11 @@
 #   - 屋外無人運用向けに堅牢化: ウォッチドッグ / gc.collect / BLE自動再広告。
 #   - GNSS の UART は起動時にボーレートを自動同期する：
 #     まず 38400 で有効な NMEA が来るか確認 → 来なければ工場出荷時の 9600 で
-#     開いて UBX-CFG-VALSET で 38400 へ切替 → 38400 で再確認。
+#     開いて 38400 へ切替を指示 → 38400 で再確認。
 #     （9600 ではマルチGNSSのフル出力(特にGSV)が帯域に収まらず間引かれるため）
+#   - 受信機は MAX-M10S（M10 世代）と NEO-6M（u-blox 6 世代）の両方に対応する。
+#     世代ごとに設定コマンドが違うため両方の形式を送り、受け付けない側は無視（NAK）する。
+#     NEO-6M は GST を既定で出さないので、旧形式 CFG-MSG で GST 出力も有効にする。
 # =============================================================================
 
 import time
@@ -118,7 +121,7 @@ class BlePeripheral:
         try:
             self._ble.gap_advertise(interval_us, adv_data=self._payload)
         except Exception as e:
-            print("  BLE広告エラー:", e)
+            print("  BLE接続待ち開始エラー:", e)
 
     def connected(self):
         return bool(self._conns)
@@ -158,8 +161,10 @@ class BlePeripheral:
 
 # ── GNSS UART のボーレート自動同期 ────────────────────────────────────────
 # M10S は設定保存用フラッシュを持たず、電源投入のたびに 9600 で起動する。
+# （NEO-6M も設定を保存しない限り 9600 で起動する）
 # 一方ソフトリセット直後などは 38400 のまま動いていることもあるため、
 # どちらの状態からでも自力で 38400 に揃うよう、起動時に検出＋切替を行う。
+# 設定はいずれも RAM（M10 は RAM|BBR）止まりで、受信機の不揮発設定は書き換えない。
 
 def _open_uart(baud):
     return UART(UART_ID, baudrate=baud, tx=Pin(UART_TX), rx=Pin(UART_RX),
@@ -199,18 +204,48 @@ def _valid_nmea_seen(uart, wait_ms=1500):
     return False
 
 
-def _ubx_valset_baud(baud):
-    # UBX-CFG-VALSET で CFG-UART1-BAUDRATE(0x40520001) を RAM+BBR 層に設定する
-    # フレームを組み立てる（チェックサムは 8bit Fletcher）。
-    payload = (bytes([0x00, 0x03, 0x00, 0x00])          # version, layers(RAM|BBR), 予約
-               + (0x40520001).to_bytes(4, "little")     # キー: CFG-UART1-BAUDRATE
-               + baud.to_bytes(4, "little"))            # 値: ボーレート(U4)
-    body = bytes([0x06, 0x8A]) + len(payload).to_bytes(2, "little") + payload
+def _ubx_frame(cls, msg_id, payload):
+    # UBX フレーム（同期 B5 62 + class/id + 長さ + payload + 8bit Fletcher チェックサム）
+    body = bytes([cls, msg_id]) + len(payload).to_bytes(2, "little") + payload
     ck_a = ck_b = 0
     for b in body:
         ck_a = (ck_a + b) & 0xFF
         ck_b = (ck_b + ck_a) & 0xFF
     return b"\xb5\x62" + body + bytes([ck_a, ck_b])
+
+
+def _ubx_valset_baud(baud):
+    # 【M10 世代】UBX-CFG-VALSET で CFG-UART1-BAUDRATE(0x40520001) を RAM+BBR 層に設定する。
+    payload = (bytes([0x00, 0x03, 0x00, 0x00])          # version, layers(RAM|BBR), 予約
+               + (0x40520001).to_bytes(4, "little")     # キー: CFG-UART1-BAUDRATE
+               + baud.to_bytes(4, "little"))            # 値: ボーレート(U4)
+    return _ubx_frame(0x06, 0x8A, payload)
+
+
+def _ubx_cfg_prt_baud(baud):
+    # 【u-blox 6 世代（NEO-6M）】UBX-CFG-PRT で UART1 を 8N1・指定ボーレートに設定する。
+    # 入力は UBX+NMEA+RTCM、出力は UBX+NMEA（工場出荷時と同じ）。設定は RAM のみ。
+    payload = (bytes([0x01, 0x00])                      # portID=1(UART1), 予約
+               + (0).to_bytes(2, "little")              # txReady（未使用）
+               + (0x000008D0).to_bytes(4, "little")     # mode: 8bit / パリティなし / 1stop
+               + baud.to_bytes(4, "little")             # baudRate
+               + (0x0007).to_bytes(2, "little")         # inProtoMask: UBX|NMEA|RTCM
+               + (0x0003).to_bytes(2, "little")         # outProtoMask: UBX|NMEA
+               + (0).to_bytes(2, "little")              # flags
+               + (0).to_bytes(2, "little"))             # 予約
+    return _ubx_frame(0x06, 0x00, payload)
+
+
+def _ubx_cfg_msg_gst():
+    # 【u-blox 6 世代（NEO-6M）】UBX-CFG-MSG で NMEA GST(F0 07) を毎エポック出力にする。
+    # 3バイト形式は「このメッセージを受けたポート」の出力レートを設定する。
+    # M10 は旧形式 CFG-MSG を受け付けないため無視される（M10 の出力は変わらない）。
+    return _ubx_frame(0x06, 0x01, bytes([0xF0, 0x07, 0x01]))
+
+
+def _enable_gst(uart):
+    uart.write(_ubx_cfg_msg_gst())
+    time.sleep_ms(100)                # 送信完了を待つ（応答の ACK/NAK は読み捨てる）
 
 
 def init_gnss_uart():
@@ -219,14 +254,19 @@ def init_gnss_uart():
         uart = _open_uart(UART_BAUD)
         if _valid_nmea_seen(uart):
             print("✓ GNSS: %d baud で受信中" % UART_BAUD)
+            _enable_gst(uart)
             return uart
         uart.deinit()
 
-        # 2) 工場出荷時ボーレートで受けられたら、目標ボーレートへの切替を指示
+        # 2) 工場出荷時ボーレートで受けられたら、目標ボーレートへの切替を指示。
+        #    M10 用（VALSET）と u-blox 6 用（CFG-PRT）を続けて送る。
+        #    どちらも受信機は対応しない側を無視し、対応する側で切り替わる。
         uart = _open_uart(UART_BAUD_DEFAULT)
         if _valid_nmea_seen(uart):
             print("  GNSS: %d baud を検出 → %d baud へ切替指示" % (UART_BAUD_DEFAULT, UART_BAUD))
             uart.write(_ubx_valset_baud(UART_BAUD))
+            time.sleep_ms(50)         # VALSET の送信完了を待つ（未対応機でも次の文を正しく受けられるよう）
+            uart.write(_ubx_cfg_prt_baud(UART_BAUD))
             time.sleep_ms(200)        # 送信完了とモジュール側の切替を待つ
         else:
             print("  GNSS: NMEA未検出 (試行 %d/3)" % (attempt + 1))
@@ -236,7 +276,9 @@ def init_gnss_uart():
     # 切替できず（GNSS未接続・故障等）：従来どおり 9600 で開いて継続する。
     # 後から 9600 のモジュールが繋がれば、少なくとも従来と同じ動作になる。
     print("！ GNSS: %d baud へ切替できず。%d baud で継続" % (UART_BAUD, UART_BAUD_DEFAULT))
-    return _open_uart(UART_BAUD_DEFAULT)
+    uart = _open_uart(UART_BAUD_DEFAULT)
+    _enable_gst(uart)
+    return uart
 
 
 # ============================ メイン ============================
@@ -261,7 +303,7 @@ def main():
             time.sleep_ms(700)
 
     print("=" * 48)
-    print("✓ Bluetooth: BLE(NUS) 広告開始  name=%s" % BLE_NAME)
+    print("✓ Bluetooth: BLE(NUS) 接続待ち  name=%s" % BLE_NAME)
     print("  Android の Chrome/Edge から接続してください")
     print("=" * 48)
     led.on()
@@ -301,6 +343,11 @@ def main():
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
                 line = line.strip()                   # \r や空白を除去
+                # 起動時の設定コマンドへの UBX 応答（ACK/NAK）が行頭に混ざることがあるので、
+                # '$' より前のバイトは捨てる（文の中身は見ない）
+                start = line.find(b"$")
+                if start > 0:
+                    line = line[start:]
                 if line:
                     st_rx += 1
                     if not _nmea_checksum_ok(line):

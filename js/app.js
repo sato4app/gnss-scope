@@ -139,6 +139,11 @@ async function main() {
     settings,
     photos,
     list: listUI,
+    // 接続タブは後で生成するため遅延参照（呼ばれるのは記録ボタンのクリック時）
+    connection: {
+      isReceiving: () => connectUI.isReceiving(),
+      statusLabel: () => connectUI.statusLabel(),
+    },
     getLoadedId: () => loaded?.session?.id ?? null,
   });
   analysisUI = initAnalysisUI({ settings, getLatestEpoch: () => latestEpoch });
@@ -158,7 +163,7 @@ async function main() {
     },
   });
   initTileUI({ tileCache: new TileCache(), storage, getMapType: () => settings.mapType });
-  initConnectUI({
+  const connectUI = initConnectUI({
     streamStats,
     onFrame: (frame) => {
       for (const line of lineBuffer.push(frame)) {

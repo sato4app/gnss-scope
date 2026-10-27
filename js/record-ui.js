@@ -27,7 +27,8 @@ import { SERIES } from './constants.js';
 const HOLD_SEC = 10;
 
 // photos: 写真パネル（photo-ui.js） / list: 一覧タブ（list-ui.js）
-export function initRecordUI({ recorder, storage, settings, photos, list, getLoadedId }) {
+// connection: 接続タブ（connect-ui.js）の { isReceiving, statusLabel }
+export function initRecordUI({ recorder, storage, settings, photos, list, connection, getLoadedId }) {
   const scatterView = new ScatterPlotView($('rec-scatter'));
   const beeper = new Beeper(() => settings.beep);
   const wakeLock = new WakeLockManager((msg) => {
@@ -87,6 +88,18 @@ export function initRecordUI({ recorder, storage, settings, photos, list, getLoa
       alert('有効な測位データがありません。接続（またはモックNMEA配信）を開始してください。');
       return;
     }
+    // 自動再生ポリシーのため、AudioContext はこのクリックの中で用意する（仕様 2）。
+    // 下の確認ダイアログで時間が経つとユーザー操作の扱いが切れるので、その前に呼ぶ。
+    beeper.unlock();
+    // 過去のエポックは残っていても、いまデータが届いていなければ確認する
+    // （途切れたまま始めると 10 秒で打ち切られるか、途切れた区間が記録に入る）
+    if (!connection.isReceiving()) {
+      const msg =
+        `${SERIES.gnss.label}からデータを受信していません（接続状態: ${connection.statusLabel()}）。\n` +
+        'このまま始めると、10 秒データが届かなければ記録は打ち切られます。\n\n' +
+        '記録を開始しますか？';
+      if (!confirm(msg)) return;
+    }
     // 下書きは残っているので破棄の確認はしない（一覧から確定・削除できる）
     clearPending();
     showWriteError('');
@@ -94,8 +107,6 @@ export function initRecordUI({ recorder, storage, settings, photos, list, getLoa
     $('rec-scatter-box').hidden = false; // ここから散布図を出す（記録前は出さない。仕様 6）
     prevStableSec = 0;
     scatterView.clear(); // 表示半径のヒステリシスも記録ごとに引き継がない
-    // 自動再生ポリシーのため、AudioContext はこのクリックの中で用意する（仕様 2）
-    beeper.unlock();
     $('btn-record').disabled = true; // 下書き作成の待ち時間に二度押しさせない
     try {
       // 下書きを作ってから収集を始める。作れなければ記録しない（残せない記録は始めない）

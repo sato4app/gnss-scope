@@ -143,4 +143,14 @@ export function initConnectUI({ streamStats, onFrame, onFlush }) {
   }, 1000);
 
   setConnStatus('disconnected');
+
+  return {
+    // データが流れているか（記録開始前の確認用）。表示の「受信中」は 1 秒タイマーで
+    // 昇格するため、状態名ではなく最終受信時刻で判定して遅れを持ち込まない。
+    isReceiving() {
+      const recent = lastRxAt != null && Date.now() - lastRxAt <= RECEIVING_SEC * 1000;
+      return recent && ['connected', 'receiving', 'demo'].includes(connState);
+    },
+    statusLabel: () => STATUS_LABELS[connState] || connState,
+  };
 }
